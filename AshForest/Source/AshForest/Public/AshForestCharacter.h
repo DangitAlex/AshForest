@@ -6,6 +6,18 @@
 #include "GameFramework/Character.h"
 #include "AshForestCharacter.generated.h"
 
+UENUM(BlueprintType)
+namespace EAshCustomMoveState
+{
+	enum Type
+	{
+		EAshMove_NONE			UMETA(DisplayName = "None"),
+		EAshMove_DASHING 		UMETA(DisplayName = "Dashing"),
+		EAshMove_CLIMBING		UMETA(DisplayName = "Climbing"),
+		EAshMove_MAX			UMETA(Hidden)
+	};
+}
+
 UCLASS(config=Game)
 class AAshForestCharacter : public ACharacter
 {
@@ -31,6 +43,8 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+
 protected:
 
 	void MoveForward(float Value);
@@ -45,26 +59,41 @@ protected:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	// End of APawn interface
 
+	UPROPERTY(EditAnywhere, Category = "Debug")
+		bool bDebugAshMovement;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Movement")
+		TEnumAsByte<EAshCustomMoveState::Type> AshMoveState_Current;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Movement")
+		TEnumAsByte<EAshCustomMoveState::Type> AshMoveState_Previous;
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Movement")
+		void SetAshCustomMoveState(TEnumAsByte<EAshCustomMoveState::Type> NewMoveState);
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Movement")
+		void OnAshCustomMoveStateChanged();
+
 //AS: =========================================================================
 //AS: Dashing ================================================================
-	
-	//AS: The cooldown time after using the dash where dashing is prevented
-	UPROPERTY(BlueprintReadWrite, Category = "Dash")
+
+	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashCooldownTime;
 
-	//AS: The magnitude that dashing sets to the player velocity multiplied by the dash direction vector
-	UPROPERTY(BlueprintReadWrite, Category = "Dash")
+	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashSpeed;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Dash")
+	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashDuration_MAX;
 
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+	UPROPERTY(EditAnywhere, Transient, Category = "Dash")
 		float DashDuration_Current;
 
-	//AS: The maximum distance the dash can ever take you, assuming no collision in the dashing path
-	UPROPERTY(BlueprintReadWrite, Category = "Dash")
+	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashDistance_MAX;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		bool bIsDashActive;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		float DashDistance_Current;
@@ -84,17 +113,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		FVector PrevDashLoc;
 
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
-		bool bIsDashing;
-
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void TryDash();
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
-		bool CanDash() const;
+		bool CanDash(const bool bIsForStart = false) const;
 
-	//UFUNCTION(BlueprintCallable, Category = "Dash")
-	FORCEINLINE bool IsDashing() const { return bIsDashing; };
+	UFUNCTION(BlueprintPure, Category = "Climbing") FORCEINLINE
+		bool IsDashing() const { return AshMoveState_Current == EAshCustomMoveState::EAshMove_DASHING; };
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void StartDash(FVector & DashDir);
@@ -103,29 +129,97 @@ protected:
 		void Dash_Tick(float DeltaTime);
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
-		void EndDash(const FVector EndHitNormal = FVector::ZeroVector);
+		void EndDash();
+
+	UFUNCTION(BlueprintCallable, Category = "Dash")
+		void EndDashWithHit(const FHitResult EndHit);
 
 //AS: =========================================================================
 //AS: Climbing ================================================================
 
+	UPROPERTY(EditAnywhere, Category = "Climbing")
+		float ClimbingSpeed_Start;
 
+	UPROPERTY(EditAnywhere, Category = "Climbing")
+		float ClimbingSpeed_DecayRate;
+
+	UPROPERTY(EditAnywhere, Category = "Climbing")
+		float ClimbingDuration_MAX;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		FVector CurrentClimbingNormal;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		FVector CurrentDirToClimbingSurface;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		FVector PrevClimbingLocation;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		float LastStartClimbingTime;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		float LastEndClimbingTime;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		float ClimbingSpeed_Current;
+
+	UFUNCTION(BlueprintCallable, Category = "Climbing")
+		bool CanClimbHitSurface(const FHitResult & SurfaceHit) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Climbing")
+		void StartClimbing(const FHitResult & ClimbingSurfaceHit);
+
+	UFUNCTION(BlueprintCallable, Category = "Climbing")
+		void Climbing_Tick(float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Climbing")
+		void EndClimbing(const bool bDoClimbOver = false, const FVector SurfaceTopLocation = FVector::ZeroVector);
+
+//AS: ===========================================================================
+//AS: Ledge Grab ================================================================
+
+	UPROPERTY(EditAnywhere, Category = "Climbing")
+		float GrabLedgeCheckInterval;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		float LastGrabLedgeCheckTime;
+	
+	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
+		bool WantsToGrabLedge() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
+		bool TryGrabLedge();
+	
+	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
+		bool CheckForLedge(FVector & FoundLedgeLocation);
+
+	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
+		bool IsValidLedgeHit(const FHitResult & LedgeHit);
+
+	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
+		bool ClimbOverLedge(const FVector & FoundLedgeLocation);
 
 //AS: =========================================================================
 //AS: Lock-On =================================================================
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
-		TWeakObjectPtr<USceneComponent> LockOnTarget;
 
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
-		TWeakObjectPtr<USceneComponent> PrevLockOnTarget;
-
-	UPROPERTY(BlueprintReadWrite, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock-On")
 		float LockOnFindTarget_Radius;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock-On")
 		float LockOnFindTarget_WithinLookDirAngleDelta;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock-On")
 		float LockOnInterpViewToTargetSpeed;
+
+	UPROPERTY(EditAnywhere, Category = "Lock-On")
+		FVector LockedOnCameraSocketOffset;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
+		TWeakObjectPtr<USceneComponent> LockOnTarget_Current;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
+		TWeakObjectPtr<USceneComponent> LockOnTarget_Previous;
 
 	UFUNCTION(BlueprintCallable, Category = "Lock-On")
 		void TryLockOn();
@@ -150,6 +244,42 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "Lock-On")
 		void Tick_LockedOn(float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+		void Tick_UpdateCamera(float DeltaTime);
+
+//AS: =========================================================================
+//AS: Mesh Interpolation ======================================================
+
+	UPROPERTY(EditAnywhere, Category = "Mesh Interp")
+		float MeshInterpSpeed_Location;
+
+	UPROPERTY(EditAnywhere, Category = "Mesh Interp")
+		float MeshInterpSpeed_Rotation;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Mesh Interp")
+		FVector MeshTargetRelLocation;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Mesh Interp")
+		FRotator MeshTargetRelRotation;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Mesh Interp")
+		bool bIsMeshTransformInterpolating;
+
+	UFUNCTION(BlueprintCallable, Category = "Mesh Interp")
+		void SoftSetActorLocation(const FVector & NewLocation, const bool & bSweep = false);
+
+	UFUNCTION(BlueprintCallable, Category = "Mesh Interp")
+		void SoftSetActorRotation(const FRotator & NewRotation);
+
+	UFUNCTION(BlueprintCallable, Category = "Mesh Interp")
+		void SoftSetActorLocationAndRotation(const FVector & NewLocation, const FRotator & NewRotation, const bool & bSweep = false);
+
+	UFUNCTION(BlueprintCallable, Category = "Mesh Interp")
+		void Tick_MeshInterp(float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Mesh Interp")
+		void ResetMeshTransform();
 
 //AS: =========================================================================
 //AS: =========================================================================

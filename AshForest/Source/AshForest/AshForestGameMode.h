@@ -14,6 +14,3 @@ class AAshForestGameMode : public AGameModeBase
 public:
 	AAshForestGameMode();
 };
-
-
-

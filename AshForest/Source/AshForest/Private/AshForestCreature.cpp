@@ -8,6 +8,13 @@ AAshForestCreature::AAshForestCreature()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+	TargetableComponentName = "TargetableComp";
+
+	TargetableComp = CreateOptionalDefaultSubobject<USceneComponent>(AAshForestCreature::TargetableComponentName);
+	if (TargetableComp)
+	{
+		TargetableComp->SetupAttachment(GetRootComponent());
+	}
 }
 
 // Called when the game starts or when spawned
@@ -31,3 +38,20 @@ void AAshForestCreature::Tick(float DeltaTime)
 //
 //}
 
+bool AAshForestCreature::GetTargetableComponents_Implementation(TArray<USceneComponent*> & TargetableComps)
+{
+	return GetTargetableComponentsInternal(TargetableComps);
+}
+
+bool AAshForestCreature::GetTargetableComponentsInternal(TArray<USceneComponent*> & TargetableComps)
+{
+	TargetableComps.Empty();
+
+	if (TargetableComp != NULL)
+	{
+		TargetableComps.Add(TargetableComp);
+		return true;
+	}
+
+	return false;
+}
