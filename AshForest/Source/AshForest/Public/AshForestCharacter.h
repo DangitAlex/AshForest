@@ -34,14 +34,17 @@ public:
 	AAshForestCharacter();
 
 	/** Base turn rate, in deg/sec. Other scaling may affect final turn rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)
+	UPROPERTY(EditAnywhere, Category = Camera)
 	float BaseTurnRate;
 
 	/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)
+	UPROPERTY(EditAnywhere, Category = Camera)
 	float BaseLookUpRate;
 
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+
+	virtual void OnJumped_Implementation() override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
@@ -54,6 +57,8 @@ protected:
 	void LookUpAtRate(float Rate);
 	virtual void AddControllerPitchInput(float Val) override;
 	virtual void AddControllerYawInput(float Val) override;
+
+	void OnMouseWheelScroll(float Rate);
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -84,16 +89,28 @@ protected:
 		float DashSpeed;
 
 	UPROPERTY(EditAnywhere, Category = "Dash")
+		int32 DashCharges_MAX;
+
+	UPROPERTY(EditAnywhere, Category = "Dash")
+		float DashChargeReloadInterval;
+
+	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashDuration_MAX;
-
-	UPROPERTY(EditAnywhere, Transient, Category = "Dash")
-		float DashDuration_Current;
-
+	
 	UPROPERTY(EditAnywhere, Category = "Dash")
 		float DashDistance_MAX;
 
+	UPROPERTY(EditAnywhere, Category = "Dash")
+		float DashDamage;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
-		bool bIsDashActive;
+		int32 DashCharges_Current;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		float DashChargeReloadDurationCurrent;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		float DashDuration_Current;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		float DashDistance_Current;
@@ -112,6 +129,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		FVector PrevDashLoc;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		TArray<AActor*> DashDamagedActors;
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void TryDash();
@@ -201,51 +221,66 @@ protected:
 		bool ClimbOverLedge(const FVector & FoundLedgeLocation);
 
 //AS: =========================================================================
-//AS: Lock-On =================================================================
+//AS: Lock On =================================================================
 
-	UPROPERTY(EditAnywhere, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock On")
 		float LockOnFindTarget_Radius;
 
-	UPROPERTY(EditAnywhere, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock On")
 		float LockOnFindTarget_WithinLookDirAngleDelta;
 
-	UPROPERTY(EditAnywhere, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock On")
 		float LockOnInterpViewToTargetSpeed;
 
-	UPROPERTY(EditAnywhere, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock On")
+		FVector DefaultCameraSocketOffset;
+
+	UPROPERTY(EditAnywhere, Category = "Lock On")
 		FVector LockedOnCameraSocketOffset;
 
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
+	UPROPERTY(EditAnywhere, Category = "Lock On")
+		float LockedOnInterpSocketOffsetSpeed_In;
+
+	UPROPERTY(EditAnywhere, Category = "Lock On")
+		float LockedOnInterpSocketOffsetSpeed_Out;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
 		TWeakObjectPtr<USceneComponent> LockOnTarget_Current;
 
-	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock-On")
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
 		TWeakObjectPtr<USceneComponent> LockOnTarget_Previous;
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void TryLockOn();
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		USceneComponent* FindLockOnTarget();
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		USceneComponent* GetPotentialLockOnTargets(TArray<USceneComponent*> & PotentialTargets);
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void SetLockOnTarget(USceneComponent* NewLockOnTarget);
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		bool HasLockOnTarget(USceneComponent* SpecificTarget = NULL) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		bool TrySwitchLockOnTarget(const float & RightInput);
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void SwitchLockOnTarget_Left();
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void SwitchLockOnTarget_Right();
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void OnLockOnTargetUpdated();
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_LockedOn(float DeltaTime);
 
-	UFUNCTION(BlueprintCallable, Category = "Lock-On")
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_UpdateCamera(float DeltaTime);
 
 //AS: =========================================================================

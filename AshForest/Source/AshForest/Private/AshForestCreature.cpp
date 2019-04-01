@@ -15,6 +15,8 @@ AAshForestCreature::AAshForestCreature()
 	{
 		TargetableComp->SetupAttachment(GetRootComponent());
 	}
+
+	MaxHealth = 100.f;
 }
 
 // Called when the game starts or when spawned
@@ -22,6 +24,7 @@ void AAshForestCreature::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	CurrentHealth = MaxHealth;
 }
 
 // Called every frame
@@ -31,19 +34,7 @@ void AAshForestCreature::Tick(float DeltaTime)
 
 }
 
-// Called to bind functionality to input
-//void AAshForestCreature::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-//{
-//	Super::SetupPlayerInputComponent(PlayerInputComponent);
-//
-//}
-
 bool AAshForestCreature::GetTargetableComponents_Implementation(TArray<USceneComponent*> & TargetableComps)
-{
-	return GetTargetableComponentsInternal(TargetableComps);
-}
-
-bool AAshForestCreature::GetTargetableComponentsInternal(TArray<USceneComponent*> & TargetableComps)
 {
 	TargetableComps.Empty();
 
@@ -54,4 +45,25 @@ bool AAshForestCreature::GetTargetableComponentsInternal(TArray<USceneComponent*
 	}
 
 	return false;
+}
+
+bool AAshForestCreature::CanBeDamaged_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent)
+{
+	return true;
+}
+
+void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount)
+{
+	if (!DamageCauser)
+		return;
+
+	CurrentHealth -= DamageAmount;
+
+	if (CurrentHealth <= 0.f)
+		Die(DamageCauser);
+}
+
+void AAshForestCreature::Die(const AActor* Murderer)
+{
+	Destroy();
 }
