@@ -21,10 +21,10 @@ public:
 	AAshForestCreature();
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "Lock On")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Lock On")
 		FName TargetableComponentName;
 
-	UPROPERTY(EditAnywhere, Category = "Health")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Health")
 		float MaxHealth;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Health")
@@ -32,6 +32,9 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "Health")
 		void Die(const AActor* Murderer);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Health")
+		void OnDeath(const AActor* Murderer);
 
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;

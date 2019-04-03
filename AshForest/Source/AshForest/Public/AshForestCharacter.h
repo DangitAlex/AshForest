@@ -34,11 +34,11 @@ public:
 	AAshForestCharacter();
 
 	/** Base turn rate, in deg/sec. Other scaling may affect final turn rate. */
-	UPROPERTY(EditAnywhere, Category = Camera)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
 	float BaseTurnRate;
 
 	/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */
-	UPROPERTY(EditAnywhere, Category = Camera)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Camera)
 	float BaseLookUpRate;
 
 	virtual void BeginPlay() override;
@@ -64,7 +64,7 @@ protected:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	// End of APawn interface
 
-	UPROPERTY(EditAnywhere, Category = "Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 		bool bDebugAshMovement;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Movement")
@@ -82,25 +82,25 @@ protected:
 //AS: =========================================================================
 //AS: Dashing ================================================================
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashCooldownTime;
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashSpeed;
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		int32 DashCharges_MAX;
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashChargeReloadInterval;
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashDuration_MAX;
 	
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashDistance_MAX;
 
-	UPROPERTY(EditAnywhere, Category = "Dash")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashDamage;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
@@ -133,6 +133,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		TArray<AActor*> DashDamagedActors;
 
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		bool bWantsToDash;
+
+	UFUNCTION(BlueprintCallable, Category = "Dash")
+		void OnDashPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "Dash")
+		void OnDashReleased();
+
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void TryDash();
 
@@ -141,6 +150,12 @@ protected:
 
 	UFUNCTION(BlueprintPure, Category = "Climbing") FORCEINLINE
 		bool IsDashing() const { return AshMoveState_Current == EAshCustomMoveState::EAshMove_DASHING; };
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Dash")
+		void OnDash();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Dash")
+		void OnDashRecharge();
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void StartDash(FVector & DashDir);
@@ -157,13 +172,13 @@ protected:
 //AS: =========================================================================
 //AS: Climbing ================================================================
 
-	UPROPERTY(EditAnywhere, Category = "Climbing")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		float ClimbingSpeed_Start;
 
-	UPROPERTY(EditAnywhere, Category = "Climbing")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		float ClimbingSpeed_DecayRate;
 
-	UPROPERTY(EditAnywhere, Category = "Climbing")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		float ClimbingDuration_MAX;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
@@ -199,7 +214,7 @@ protected:
 //AS: ===========================================================================
 //AS: Ledge Grab ================================================================
 
-	UPROPERTY(EditAnywhere, Category = "Climbing")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		float GrabLedgeCheckInterval;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
@@ -223,26 +238,29 @@ protected:
 //AS: =========================================================================
 //AS: Lock On =================================================================
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float LockOnFindTarget_Radius;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float LockOnFindTarget_WithinLookDirAngleDelta;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float LockOnInterpViewToTargetSpeed;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		FVector DefaultCameraSocketOffset;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		FVector LockedOnCameraSocketOffset;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float LockedOnInterpSocketOffsetSpeed_In;
 
-	UPROPERTY(EditAnywhere, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float LockedOnInterpSocketOffsetSpeed_Out;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
+		float AllowSwitchLockOnTargetInterval;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
 		TWeakObjectPtr<USceneComponent> LockOnTarget_Current;
@@ -250,14 +268,35 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
 		TWeakObjectPtr<USceneComponent> LockOnTarget_Previous;
 
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
+		bool bCanSwitchLockOnTarget;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
+		bool bWantsToLockOn;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
+		int32 WantsToSwitchLockOnTargetDir;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
+		float LastSwitchLockOnTargetTime;
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void OnLockOnPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void OnLockOnReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void OnLockOnSwitchInput(float Dir);
+
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void TryLockOn();
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
-		USceneComponent* FindLockOnTarget();
+		USceneComponent* FindLockOnTarget(const bool bIgnorePreviousTarget = false, const FRotator OverrideViewRot = FRotator::ZeroRotator);
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
-		USceneComponent* GetPotentialLockOnTargets(TArray<USceneComponent*> & PotentialTargets);
+		USceneComponent* GetPotentialLockOnTargets(TArray<USceneComponent*> & PotentialTargets, const bool bIgnorePreviousTarget = false, const FRotator OverrideViewRot = FRotator::ZeroRotator);
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void SetLockOnTarget(USceneComponent* NewLockOnTarget);
@@ -274,7 +313,7 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void SwitchLockOnTarget_Right();
 
-	UFUNCTION(BlueprintCallable, Category = "Lock On")
+	UFUNCTION(BlueprintNativeEvent, Category = "Lock On")
 		void OnLockOnTargetUpdated();
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
@@ -286,10 +325,10 @@ protected:
 //AS: =========================================================================
 //AS: Mesh Interpolation ======================================================
 
-	UPROPERTY(EditAnywhere, Category = "Mesh Interp")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Interp")
 		float MeshInterpSpeed_Location;
 
-	UPROPERTY(EditAnywhere, Category = "Mesh Interp")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh Interp")
 		float MeshInterpSpeed_Rotation;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Mesh Interp")
@@ -317,6 +356,11 @@ protected:
 		void ResetMeshTransform();
 
 //AS: =========================================================================
+//AS: Combat ==================================================================
+	
+	
+
+//AS: =========================================================================
 //AS: =========================================================================
 
 public:
@@ -324,5 +368,8 @@ public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+		void OnKilledEnemy(AActor* KilledEnemy);
 };
 

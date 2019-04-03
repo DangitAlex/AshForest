@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AshForestCreature.h"
+#include "AshForestCharacter.h"
 
 // Sets default values
 AAshForestCreature::AAshForestCreature()
@@ -54,7 +55,7 @@ bool AAshForestCreature::CanBeDamaged_Implementation(const AActor* DamageCauser,
 
 void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount)
 {
-	if (!DamageCauser)
+	if (!DamageCauser || IsPendingKill())
 		return;
 
 	CurrentHealth -= DamageAmount;
@@ -65,5 +66,12 @@ void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, c
 
 void AAshForestCreature::Die(const AActor* Murderer)
 {
+	OnDeath(Murderer);
 	Destroy();
+}
+
+void AAshForestCreature::OnDeath_Implementation(const AActor* Murderer)
+{
+	if (Murderer->IsA(AAshForestCharacter::StaticClass()))
+		((AAshForestCharacter*)Murderer)->OnKilledEnemy(this);
 }
