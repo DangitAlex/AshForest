@@ -57,7 +57,7 @@ AAshForestCharacter::AAshForestCharacter()
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named MyCharacter (to avoid direct content references in C++)
 
-	DashCooldownTime = .15f;
+	DashCooldownTime = .1f;
 	DashSpeed = 9000.f;
 	DashDuration_MAX = .3f;
 	DashCharges_MAX = 5;
@@ -815,7 +815,7 @@ bool AAshForestCharacter::CheckForLedge(FVector & FoundLedgeLocation)
 
 bool AAshForestCharacter::IsValidLedgeHit(const FHitResult & LedgeHit)
 {
-	return LedgeHit.ImpactNormal != FVector::ZeroVector && CanClimbHitSurface(LedgeHit) && (FVector::DotProduct(LedgeHit.ImpactNormal, FVector::UpVector) >= .25f);
+	return LedgeHit.ImpactNormal != FVector::ZeroVector && /*CanClimbHitSurface(LedgeHit) &&*/ (FVector::DotProduct(LedgeHit.ImpactNormal, FVector::UpVector) >= .25f);
 }
 PRAGMA_ENABLE_OPTIMIZATION
 
