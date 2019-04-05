@@ -43,8 +43,8 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
-
-	virtual void OnJumped_Implementation() override;
+	
+	virtual void Jump() override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
@@ -83,7 +83,10 @@ protected:
 //AS: Dashing ================================================================
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
-		float DashCooldownTime;
+		float DashCooldownTime_Normal;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+		float DashCooldownTime_AfterWallJump;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashSpeed;
@@ -95,6 +98,9 @@ protected:
 		float DashChargeReloadInterval;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+		int32 AllowedDashesWhileFalling;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashDuration_MAX;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
@@ -103,11 +109,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
 		float DashDamage;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash")
+		float DashCooldownTime_Current;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		int32 DashCharges_Current;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		float DashChargeReloadDurationCurrent;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		int32 DashesWhileFalling_Current;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		float DashDuration_Current;
@@ -131,7 +143,13 @@ protected:
 		FVector PrevDashLoc;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		FVector OriginalDashStartLocation;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		TArray<AActor*> DashDamagedActors;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
+		bool bAllowedToDash;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Dash")
 		bool bWantsToDash;
@@ -161,7 +179,7 @@ protected:
 		void StartDash(FVector & DashDir);
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
-		void Dash_Tick(float DeltaTime);
+		void Tick_Dash(float DeltaTime);
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
 		void EndDash();
@@ -181,6 +199,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		float ClimbingDuration_MAX;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
+		FVector2D ClimbingJumpImpulseAxisSizes;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		FVector CurrentClimbingNormal;
 
@@ -197,19 +218,28 @@ protected:
 		float LastEndClimbingTime;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		float LastWallJumpTime;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		float ClimbingSpeed_Current;
 
 	UFUNCTION(BlueprintCallable, Category = "Climbing")
-		bool CanClimbHitSurface(const FHitResult & SurfaceHit) const;
+		bool CanClimbHitSurface(const bool & bIsForStart, const FHitResult & SurfaceHit) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Climbing")
 		void StartClimbing(const FHitResult & ClimbingSurfaceHit);
 
 	UFUNCTION(BlueprintCallable, Category = "Climbing")
-		void Climbing_Tick(float DeltaTime);
+		void Tick_Climbing(float DeltaTime);
 
 	UFUNCTION(BlueprintCallable, Category = "Climbing")
 		void EndClimbing(const bool bDoClimbOver = false, const FVector SurfaceTopLocation = FVector::ZeroVector);
+
+	UFUNCTION(BlueprintCallable, Category = "Climbing")
+		void DoWallJump();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Climbing")
+		void OnWallJump();
 
 //AS: ===========================================================================
 //AS: Ledge Grab ================================================================
@@ -317,7 +347,13 @@ protected:
 		void OnLockOnTargetUpdated();
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
+		void AutoSwitchLockOnTarget(USceneComponent* OldTarget = NULL);
+
+	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_LockedOn(float DeltaTime);
+
+	//AS: =========================================================================
+	//AS: Camera  =================================================================
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_UpdateCamera(float DeltaTime);

@@ -57,17 +57,20 @@ AAshForestCharacter::AAshForestCharacter()
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named MyCharacter (to avoid direct content references in C++)
 
-	DashCooldownTime = .1f;
+	DashCooldownTime_Normal = .05f;
+	DashCooldownTime_AfterWallJump= 1.f;
 	DashSpeed = 9000.f;
 	DashDuration_MAX = .3f;
 	DashCharges_MAX = 5;
 	DashChargeReloadInterval = 1.5f;
+	AllowedDashesWhileFalling = 1;
 	DashDistance_MAX = 750.f;
 	DashDamage = 50.f;
 
 	ClimbingSpeed_Start = 1200.f;
 	ClimbingSpeed_DecayRate = 800.f;
 	ClimbingDuration_MAX = 1.f;
+	ClimbingJumpImpulseAxisSizes.Set(1000.f, 2000.f);
 
 	GrabLedgeCheckInterval = .05;
 
@@ -89,7 +92,7 @@ void AAshForestCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 {
 	// Set up gameplay key bindings
 	check(PlayerInputComponent);
-	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
+	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &AAshForestCharacter::Jump);
 	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
 
 	//AS: Custom Actions
@@ -198,6 +201,8 @@ void AAshForestCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	DashCharges_Current = DashCharges_MAX;
+
+	ResetMeshTransform();
 }
 
 void AAshForestCharacter::Tick(float DeltaTime)
@@ -226,10 +231,10 @@ void AAshForestCharacter::Tick(float DeltaTime)
 	switch (AshMoveState_Current)
 	{
 	case EAshCustomMoveState::EAshMove_DASHING:
-		Dash_Tick(DeltaTime);
+		Tick_Dash(DeltaTime);
 		break;
 	case EAshCustomMoveState::EAshMove_CLIMBING:
-		Climbing_Tick(DeltaTime);
+		Tick_Climbing(DeltaTime);
 		break;
 	default:
 		if (WantsToGrabLedge())
@@ -245,8 +250,6 @@ void AAshForestCharacter::Tick(float DeltaTime)
 	if (bIsMeshTransformInterpolating)
 		Tick_MeshInterp(DeltaTime);
 
-	if (GEngine) GEngine->AddOnScreenDebugMessage(100, -1, FColor::Magenta, FString::Printf(TEXT("Dash Charges: %i/%i"), DashCharges_Current, DashCharges_MAX));
-
 	//AS: Reload Dash Charges Over Time
 	if (DashCharges_Current < DashCharges_MAX && ((UCharacterMovementComponent*)GetMovementComponent())->IsWalking())
 	{
@@ -260,22 +263,32 @@ void AAshForestCharacter::Tick(float DeltaTime)
 			OnDashRecharge();
 		}
 	}
+
+	//AS: Restore Air Control after wall jumping
+	if (GetCharacterMovement()->AirControl == 0.f && GetWorld()->TimeSince(LastWallJumpTime) > DashCooldownTime_AfterWallJump)
+	{
+		auto MyPlayerCDO = GetDefault<AAshForestCharacter>();
+		GetCharacterMovement()->AirControl = MyPlayerCDO->GetCharacterMovement()->AirControl;
+	}
+
 }
 
-void AAshForestCharacter::OnJumped_Implementation()
+void AAshForestCharacter::Jump()
 {
 	if (AshMoveState_Current == EAshCustomMoveState::EAshMove_CLIMBING)
-	{
-		auto impulseDir = ((CurrentClimbingNormal + FVector::UpVector) * .5f).GetSafeNormal();
-		((UCharacterMovementComponent*)GetMovementComponent())->AddImpulse(impulseDir * 2000.f, true);
-
-		EndClimbing();
-	}
+		DoWallJump();
+	else
+		Super::Jump();
 }
 
 void AAshForestCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode /*= 0*/)
 {
 	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	if (GetCharacterMovement()->IsWalking())
+	{
+		DashesWhileFalling_Current = 0;
+	}
 }
 
 void AAshForestCharacter::SetAshCustomMoveState(TEnumAsByte<EAshCustomMoveState::Type> NewMoveState)
@@ -339,7 +352,7 @@ void AAshForestCharacter::TryDash()
 
 bool AAshForestCharacter::CanDash(const bool bIsForStart /*= false*/) const
 {
-	return bIsForStart ? ((GetWorld()->TimeSince(LastDashEndTime) > DashCooldownTime) && AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE && DashCharges_Current > 0) : IsDashing();
+	return bIsForStart ? ((GetWorld()->TimeSince(LastDashEndTime) > DashCooldownTime_Current) && AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE && DashCharges_Current > 0 && (GetCharacterMovement()->IsWalking() || DashesWhileFalling_Current < AllowedDashesWhileFalling)) : IsDashing();
 }
 
 void AAshForestCharacter::OnDash_Implementation()
@@ -359,10 +372,12 @@ void AAshForestCharacter::StartDash(FVector & DashDir)
 
 	SetAshCustomMoveState(EAshCustomMoveState::EAshMove_DASHING);
 
+	OriginalDashStartLocation = GetActorLocation();
 	OriginalDashDir = CurrentDashDir = DashDir;
 	PrevDashLoc = GetActorLocation();
 	DashDistance_Current = DashDistance_MAX;
 	LastDashStartTime = GetWorld()->GetTimeSeconds();
+	DashCooldownTime_Current = DashCooldownTime_Normal;
 
 	GetCharacterMovement()->GravityScale = 0.f;
 	GetCharacterMovement()->MaxWalkSpeed = DashSpeed;
@@ -378,10 +393,13 @@ void AAshForestCharacter::StartDash(FVector & DashDir)
 
 	DashCharges_Current--;
 
+	if (GetCharacterMovement()->IsFalling())
+		DashesWhileFalling_Current++;
+
 	OnDash();
 }
 
-void AAshForestCharacter::Dash_Tick(float DeltaTime)
+void AAshForestCharacter::Tick_Dash(float DeltaTime)
 {
 	if (!CanDash())
 		return;
@@ -398,10 +416,10 @@ void AAshForestCharacter::Dash_Tick(float DeltaTime)
 	DashDistance_Current -= (GetActorLocation() - PrevDashLoc).Size2D();
 
 	//AS: Check to see if we have gone past our max allowed dashing distance
-	if (DashDistance_Current <= 0.f)
+	if (DashDistance_Current <= 0.f ||  (GetActorLocation() - OriginalDashStartLocation).Size2D() > DashDistance_MAX)
 	{
 		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END DASH (REACHED MAX DISTANCE)")));
-		
+
 		EndDash();
 		return;
 	}
@@ -409,6 +427,8 @@ void AAshForestCharacter::Dash_Tick(float DeltaTime)
 	float capRadius;
 	float capHalfHeight;
 	GetCapsuleComponent()->GetScaledCapsuleSize(capRadius, capHalfHeight);
+
+	capRadius += 15.f;
 
 	if (HasLockOnTarget() && (GetActorLocation() - LockOnTarget_Current->GetComponentLocation()).SizeSquared2D() > FMath::Square(DashDistance_MAX * .5f))
 	{
@@ -437,7 +457,7 @@ void AAshForestCharacter::Dash_Tick(float DeltaTime)
 	auto traceStart = GetActorLocation();
 	auto traceEnd = GetActorLocation() + (OriginalDashDir * DashDistance_Current);
 	TArray<FHitResult> dashHits;
-	auto bFoundHit = GetWorld()->SweepMultiByChannel(dashHits, traceStart, traceEnd, GetActorRotation().Quaternion(), ECollisionChannel::ECC_Camera, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
+	auto bFoundHit = GetWorld()->SweepMultiByChannel(dashHits, traceStart, traceEnd, GetActorRotation().Quaternion(), ECollisionChannel::ECC_Visibility, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
 	
 	if (bDebugAshMovement)
 	{
@@ -450,20 +470,36 @@ void AAshForestCharacter::Dash_Tick(float DeltaTime)
 	{
 		for (auto dashHit : dashHits)
 		{
-			if (dashHit.Actor == NULL || DashDamagedActors.Contains(dashHit.Actor.Get()) || (dashHit.Location - GetActorLocation()).SizeSquared2D() > 2.f)
+			if (dashHit.Actor == NULL || DashDamagedActors.Contains(dashHit.Actor.Get()) || (dashHit.Location - GetActorLocation()).SizeSquared2D() > 5.f)
 				continue;
-			
+
 			if (dashHit.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()))
 			{
 				if (ITargetableInterface::Execute_CanBeDamaged(dashHit.Actor.Get(), this, dashHit))
 				{
-					ITargetableInterface::Execute_TakeDamage(dashHit.Actor.Get(), this, DashDamage);
-
-					GetCapsuleComponent()->IgnoreActorWhenMoving(dashHit.Actor.Get(), true);
-					DashDamagedActors.Add(dashHit.Actor.Get());
+					auto bStopDash = false;
 
 					if (bDebugAshMovement)
 						DrawDebugSphere(GetWorld(), dashHit.ImpactPoint, 75.f, 32, FColor::Yellow, false, 5.f, 0, 5.f);
+
+					if (!ITargetableInterface::Execute_IgnoresCollisionWithDamager(dashHit.Actor.Get(), this, dashHit))
+					{
+						EndDashWithHit(dashHit);
+						bStopDash = true;
+					}
+
+					ITargetableInterface::Execute_TakeDamage(dashHit.Actor.Get(), this, DashDamage, dashHit);
+
+					if (bStopDash)
+					{
+						return;
+					}
+					else if (dashHit.Actor != NULL)
+					{
+						GetCapsuleComponent()->IgnoreActorWhenMoving(dashHit.Actor.Get(), true);
+						DashDamagedActors.Add(dashHit.Actor.Get());
+					}
+
 				}
 				else
 				{
@@ -540,6 +576,13 @@ void AAshForestCharacter::EndDash()
 		GetCapsuleComponent()->IgnoreActorWhenMoving(currActor, false);
 	}
 
+	//AS: Make sure that we can't go extra distance due to large tick delta times
+	if ((GetActorLocation() - OriginalDashStartLocation).Size2D() > DashDistance_MAX)
+	{
+		auto newDashEndLoc = OriginalDashStartLocation + ((GetActorLocation() - OriginalDashStartLocation).GetSafeNormal2D() * DashDistance_MAX);
+		SetActorLocation(newDashEndLoc);
+	}
+
 	auto newVel = GetVelocity().GetClampedToSize2D(0.f, 1000.f);
 	newVel.Z = 0.f;
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
@@ -554,7 +597,7 @@ void AAshForestCharacter::EndDashWithHit(const FHitResult EndHit)
 
 	if (EndHit.ImpactNormal != FVector::ZeroVector)
 	{
-		if (!CanClimbHitSurface(EndHit))
+		if (!CanClimbHitSurface(true, EndHit))
 		{
 			auto impulseDir = ((EndHit.ImpactNormal + FVector::UpVector) * .5f).GetSafeNormal();
 			((UCharacterMovementComponent*)GetMovementComponent())->AddImpulse(impulseDir * 1000.f, true);
@@ -564,15 +607,21 @@ void AAshForestCharacter::EndDashWithHit(const FHitResult EndHit)
 	}
 }
 
-bool AAshForestCharacter::CanClimbHitSurface(const FHitResult & SurfaceHit) const
+bool AAshForestCharacter::CanClimbHitSurface(const bool & bIsForStart, const FHitResult & SurfaceHit) const
 {
-	return !HasLockOnTarget() && SurfaceHit.Component != NULL && SurfaceHit.Component->CanBeClimbed() && FVector::DotProduct((SurfaceHit.ImpactPoint - GetActorLocation()).GetSafeNormal2D(), GetControlRotation().Vector()) > .15f;
+	if (HasLockOnTarget() || SurfaceHit.Component == NULL || !SurfaceHit.Component->CanBeClimbed())
+		return false;
+
+	if (bIsForStart)
+		return FVector::DotProduct((SurfaceHit.ImpactPoint - GetActorLocation()).GetSafeNormal2D(), GetControlRotation().Vector()) > .15f;
+
+	return true;
 }
 
 void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 {
 	SetAshCustomMoveState(EAshCustomMoveState::EAshMove_CLIMBING);
-	
+
 	LastStartClimbingTime = GetWorld()->GetTimeSeconds();
 	CurrentClimbingNormal = ClimbingSurfaceHit.ImpactNormal;
 	CurrentDirToClimbingSurface = (ClimbingSurfaceHit.ImpactPoint - GetActorLocation()).GetSafeNormal();
@@ -583,9 +632,11 @@ void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 
 	auto newVel = FVector::VectorPlaneProject(FVector::UpVector, CurrentClimbingNormal).GetSafeNormal() * ClimbingSpeed_Current;
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
+
+	DashesWhileFalling_Current = AllowedDashesWhileFalling;
 }
 
-void AAshForestCharacter::Climbing_Tick(float DeltaTime)
+void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 {
 	if (GetWorld()->TimeSince(LastStartClimbingTime) > ClimbingDuration_MAX)
 	{
@@ -623,7 +674,7 @@ void AAshForestCharacter::Climbing_Tick(float DeltaTime)
 	FHitResult climbingHit;
 	auto bFoundSurface = GetWorld()->SweepSingleByChannel(climbingHit, GetActorLocation(), GetActorLocation() + (CurrentDirToClimbingSurface * 100.f), FQuat::Identity, ECC_Camera, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
 	
-	if (bFoundSurface && !CanClimbHitSurface(climbingHit))
+	if (bFoundSurface && !CanClimbHitSurface(false, climbingHit))
 		bFoundSurface = false;
 	
 	auto projectedClimbDir = FVector::VectorPlaneProject(FVector::UpVector, CurrentClimbingNormal).GetSafeNormal();
@@ -684,10 +735,38 @@ void AAshForestCharacter::EndClimbing(const bool bDoClimbOver /*= false*/, const
 		ClimbOverLedge(SurfaceTopLocation);
 }
 
+void AAshForestCharacter::DoWallJump()
+{
+	auto impulse = ((CurrentClimbingNormal + FVector::UpVector) * .5f).GetSafeNormal() * ClimbingJumpImpulseAxisSizes.X;
+	impulse.Z = ClimbingJumpImpulseAxisSizes.Y;
+	((UCharacterMovementComponent*)GetMovementComponent())->AddImpulse(impulse, true);
+
+	LastWallJumpTime = GetWorld()->GetTimeSeconds();
+
+	DashCooldownTime_Current = DashCooldownTime_AfterWallJump;
+	LastDashEndTime = GetWorld()->GetTimeSeconds();
+	DashesWhileFalling_Current = 0;
+
+	GetCharacterMovement()->AirControl = 0.f;
+
+	EndClimbing();
+
+	OnWallJump();
+}
+
+void AAshForestCharacter::OnWallJump_Implementation()
+{
+	//AS: On wall jump event
+}
+
 PRAGMA_DISABLE_OPTIMIZATION
 bool AAshForestCharacter::WantsToGrabLedge() const
 {
-	return GetCharacterMovement()->IsFalling() && /*GetVelocity().Z <= 0.f &&*/ AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE && FVector::DotProduct(GetLastMovementInputVector(), GetVelocity().GetSafeNormal2D()) > .25f;
+	if (!GetCharacterMovement()->IsFalling() || AshMoveState_Current != EAshCustomMoveState::EAshMove_NONE)
+		return false;
+
+	auto dot = FVector::DotProduct(GetLastMovementInputVector(), GetActorForwardVector()/*GetVelocity().GetSafeNormal2D()*/);
+	return (dot >= .25f); //|| (dot == 0.f && FVector::DotProduct(GetLastMovementInputVector(), GetActorForwardVector()) > 0.f));
 }
 
 bool AAshForestCharacter::TryGrabLedge()
@@ -808,14 +887,14 @@ bool AAshForestCharacter::CheckForLedge(FVector & FoundLedgeLocation)
 	else
 		return false;
 
-	FoundLedgeLocation = (ledgeHit_Center.ImpactPoint + (ledgeHit_Center.ImpactNormal * .1f));
+	FoundLedgeLocation = (ledgeHit_Center.ImpactPoint + (ledgeHit_Center.ImpactNormal * (capRadius + .1f)));
 
 	return true;
 }
 
 bool AAshForestCharacter::IsValidLedgeHit(const FHitResult & LedgeHit)
 {
-	return LedgeHit.ImpactNormal != FVector::ZeroVector && /*CanClimbHitSurface(LedgeHit) &&*/ (FVector::DotProduct(LedgeHit.ImpactNormal, FVector::UpVector) >= .25f);
+	return LedgeHit.ImpactNormal != FVector::ZeroVector && (FVector::DotProduct(LedgeHit.ImpactNormal, FVector::UpVector) >= .25f);
 }
 PRAGMA_ENABLE_OPTIMIZATION
 
@@ -828,7 +907,7 @@ bool AAshForestCharacter::ClimbOverLedge(const FVector & FoundLedgeLocation)
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
 
-	auto wantsLocation = FoundLedgeLocation + (FVector::UpVector * capHalfHeight);
+	auto wantsLocation = FoundLedgeLocation + (FVector::UpVector * (capHalfHeight - capRadius));
 
 	//AS: Make sure there is enough space for the player capsule on top of the ledge
 	auto bEnoughSpace = !GetWorld()->OverlapAnyTestByChannel(wantsLocation, GetActorRotation().Quaternion(), ECC_Camera, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
@@ -887,6 +966,7 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 
 	FCollisionObjectQueryParams objectParams;
 	objectParams.AddObjectTypesToQuery(ECollisionChannel::ECC_Pawn);
+	objectParams.AddObjectTypesToQuery(ECollisionChannel::ECC_WorldDynamic);
 
 	FCollisionQueryParams queryParams;
 	queryParams.AddIgnoredActor(this);
@@ -925,7 +1005,7 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 
 		for (FOverlapResult currTarget : potentialTargets)
 		{
-			if (currTarget.Actor == NULL || !currTarget.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()))
+			if (currTarget.Actor == NULL || !currTarget.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()) || !ITargetableInterface::Execute_CanBeTargeted(currTarget.Actor.Get(), this))
 				continue;
 
 			if (ITargetableInterface::Execute_GetTargetableComponents(currTarget.Actor.Get(), currPotentialTargetsArray))
@@ -1069,8 +1149,20 @@ void AAshForestCharacter::OnLockOnTargetUpdated_Implementation()
 
 void AAshForestCharacter::Tick_LockedOn(float DeltaTime)
 {
+	//AS: If our current target ref has become invalid
 	if (LockOnTarget_Current == NULL)
+	{
+		AutoSwitchLockOnTarget();
 		return;
+	}
+
+	//AS: If our current target can no longer be targeted
+	if (!LockOnTarget_Current.Get()->GetOwner() || !LockOnTarget_Current.Get()->GetOwner()->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass())
+		|| !ITargetableInterface::Execute_CanBeTargeted(LockOnTarget_Current.Get()->GetOwner(), this))
+	{
+		AutoSwitchLockOnTarget(LockOnTarget_Current.Get());
+		return;
+	}
 
 	if (bDebugAshMovement)
 		DrawDebugLine(GetWorld(), GetActorLocation(), LockOnTarget_Current->GetComponentLocation(), FColor::Magenta, false, -1.f, 0, 3.f);
@@ -1146,7 +1238,8 @@ void AAshForestCharacter::Tick_MeshInterp(float DeltaTime)
 	}
 
 	auto currRot = GetMesh()->GetRelativeTransform().GetRotation().Rotator();
-	if (currRot != MeshTargetRelRotation)
+	auto rotDelta = MeshTargetRelRotation - currRot;
+	if (!rotDelta.IsNearlyZero(.03f))
 	{
 		bStillInterping = true;
 
@@ -1157,6 +1250,8 @@ void AAshForestCharacter::Tick_MeshInterp(float DeltaTime)
 		else
 			GetMesh()->SetRelativeRotation(MeshTargetRelRotation);
 	}
+
+	//DrawDebugCoordinateSystem(GetWorld(), GetMesh()->GetComponentLocation(), GetMesh()->GetComponentRotation(), 100.f, false, -1.f, 0, 3.f);
 
 	bIsMeshTransformInterpolating = bStillInterping;
 }
@@ -1184,9 +1279,14 @@ void AAshForestCharacter::OnKilledEnemy(AActor* KilledEnemy)
 			return;
 	}
 
-	if (HasLockOnTarget(killedTargetComp))
+	AutoSwitchLockOnTarget(killedTargetComp);
+}
+
+void AAshForestCharacter::AutoSwitchLockOnTarget(USceneComponent* OldTarget /*= NULL*/)
+{
+	if (HasLockOnTarget(OldTarget))
 	{
 		SetLockOnTarget(NULL);
-		SetLockOnTarget(FindLockOnTarget(true, (killedTargetComp->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation()));
+		SetLockOnTarget(FindLockOnTarget(true, (OldTarget->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation()));
 	}
 }

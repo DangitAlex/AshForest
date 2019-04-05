@@ -13,9 +13,7 @@ AAshForestCreature::AAshForestCreature()
 
 	TargetableComp = CreateOptionalDefaultSubobject<USceneComponent>(AAshForestCreature::TargetableComponentName);
 	if (TargetableComp)
-	{
 		TargetableComp->SetupAttachment(GetRootComponent());
-	}
 
 	MaxHealth = 100.f;
 }
@@ -48,12 +46,23 @@ bool AAshForestCreature::GetTargetableComponents_Implementation(TArray<USceneCom
 	return false;
 }
 
-bool AAshForestCreature::CanBeDamaged_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent)
+bool AAshForestCreature::CanBeTargeted_Implementation(const AActor* ByActor)
 {
-	return true;
+	return ByActor->IsA(AAshForestCharacter::StaticClass());
 }
 
-void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount)
+bool AAshForestCreature::CanBeDamaged_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent)
+{
+	return DamageCauser->IsA(AAshForestCharacter::StaticClass());
+}
+
+
+bool AAshForestCreature::IgnoresCollisionWithDamager_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent)
+{
+	return DamageCauser->IsA(AAshForestCharacter::StaticClass());
+}
+
+void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent)
 {
 	if (!DamageCauser || IsPendingKill())
 		return;

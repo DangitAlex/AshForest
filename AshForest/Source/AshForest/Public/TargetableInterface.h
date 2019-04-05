@@ -26,8 +26,14 @@ public:
 		bool GetTargetableComponents(TArray<USceneComponent*> & TargetableComps);
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
+		bool CanBeTargeted(const AActor* ByActor);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
 		bool CanBeDamaged(const AActor* DamageCauser, const FHitResult & DamageHitEvent);
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
-		void TakeDamage(const AActor* DamageCauser, const float & DamageAmount);
+		bool IgnoresCollisionWithDamager(const AActor* DamageCauser, const FHitResult & DamageHitEvent);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
+		void TakeDamage(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent);
 };

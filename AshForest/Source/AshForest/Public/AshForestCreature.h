@@ -44,6 +44,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	virtual bool GetTargetableComponents_Implementation(TArray<USceneComponent*> & TargetableComps) override;
+	virtual bool CanBeTargeted_Implementation(const AActor* ByActor) override;
 	virtual bool CanBeDamaged_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent) override;
-	virtual void TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount) override;
+	virtual bool IgnoresCollisionWithDamager_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent) override;
+	virtual void TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent) override;
 };
