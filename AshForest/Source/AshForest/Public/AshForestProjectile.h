@@ -57,7 +57,7 @@ public:
 		UProjectileMovementComponent* GetProjectileMovement() const { return ProjMoveComp; };
 
 	UFUNCTION(BlueprintNativeEvent, Category = Projectile)
-		void OnDeflected(const AActor* DeflectedByActor);
+		void OnDeflected(AActor* DeflectedByActor, const FVector & DeflectedVelocity);
 
 	UFUNCTION()
 		void OnProjectileHit(UPrimitiveComponent * HitComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, FVector NormalImpulse, const FHitResult & Hit);

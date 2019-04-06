@@ -58,12 +58,12 @@ AAshForestCharacter::AAshForestCharacter()
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named MyCharacter (to avoid direct content references in C++)
 
-	DashCooldownTime_Normal = .05f;
+	DashCooldownTime_Normal = .02f;
 	DashCooldownTime_AfterWallJump= 1.f;
 	DashSpeed = 9000.f;
 	DashDuration_MAX = .3f;
-	DashCharges_MAX = 5;
-	DashChargeReloadInterval = 1.5f;
+	DashCharges_MAX = 6;
+	DashChargeReloadInterval = 1.f;
 	AllowedDashesWhileFalling = 1;
 	DashDistance_MAX = 750.f;
 	DashDamage = 50.f;
@@ -593,7 +593,7 @@ void AAshForestCharacter::EndDash()
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 }
 
-void AAshForestCharacter::EndDashWithHit(const FHitResult EndHit)
+void AAshForestCharacter::EndDashWithHit(const FHitResult & EndHit)
 {
 	if (!IsDashing())
 		return;
@@ -1279,17 +1279,14 @@ void AAshForestCharacter::DeflectProjectile(AActor* HitProjectile)
 	if (HitProjectile->IsA(AAshForestProjectile::StaticClass()))
 	{
 		GetCapsuleComponent()->IgnoreActorWhenMoving(HitProjectile, true);
-		((AAshForestProjectile*)HitProjectile)->GetCollisionComponent()->IgnoreActorWhenMoving(this, true);
 
 		auto deflectDir = LockOnTarget_Current != NULL ? (LockOnTarget_Current->GetComponentLocation() - HitProjectile->GetActorLocation()).GetSafeNormal() : CurrentDashDir;
 		
 		if (LockOnTarget_Current != NULL && FVector::DotProduct(-((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->GetVelocity().GetSafeNormal(), deflectDir) <= .1f)
 			deflectDir = CurrentDashDir;
 
-		((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->OverrideVelocity((DashSpeed * .5f) * deflectDir);
-		((AAshForestProjectile*)HitProjectile)->Instigator = NULL;
-
-		((AAshForestProjectile*)HitProjectile)->OnDeflected(this);
+		auto deflectedVel = (DashSpeed * .5f) * deflectDir;
+		((AAshForestProjectile*)HitProjectile)->OnDeflected(this, deflectedVel);
 	}
 }
 

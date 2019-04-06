@@ -187,7 +187,7 @@ protected:
 		void EndDash();
 
 	UFUNCTION(BlueprintCallable, Category = "Dash")
-		void EndDashWithHit(const FHitResult EndHit);
+		void EndDashWithHit(const FHitResult & EndHit);
 
 //AS: =========================================================================
 //AS: Climbing ================================================================
