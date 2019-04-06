@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
+#include "DamageableCharacter.h"
 #include "AshForestCharacter.generated.h"
 
 UENUM(BlueprintType)
@@ -19,7 +19,7 @@ namespace EAshCustomMoveState
 }
 
 UCLASS(config=Game)
-class AAshForestCharacter : public ACharacter
+class AAshForestCharacter : public ADamageableCharacter
 {
 	GENERATED_BODY()
 
@@ -47,6 +47,8 @@ public:
 	virtual void Jump() override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+
+	virtual void TargetableDie(const AActor* Murderer) override;
 
 protected:
 
@@ -299,6 +301,9 @@ protected:
 		TWeakObjectPtr<USceneComponent> LockOnTarget_Previous;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
+		bool bShouldBeLockedOn;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
 		bool bCanSwitchLockOnTarget;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
@@ -332,7 +337,7 @@ protected:
 		void SetLockOnTarget(USceneComponent* NewLockOnTarget);
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
-		bool HasLockOnTarget(USceneComponent* SpecificTarget = NULL) const;
+		bool IsLockedOn(USceneComponent* ToSpecificTarget = NULL) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		bool TrySwitchLockOnTarget(const float & RightInput);
@@ -352,8 +357,8 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_LockedOn(float DeltaTime);
 
-	//AS: =========================================================================
-	//AS: Camera  =================================================================
+//AS: =========================================================================
+//AS: Camera  =================================================================
 
 	UFUNCTION(BlueprintCallable, Category = "Lock On")
 		void Tick_UpdateCamera(float DeltaTime);
@@ -394,7 +399,38 @@ protected:
 //AS: =========================================================================
 //AS: Combat ==================================================================
 	
-	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+		float HealthRestoreRate;
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+		void Tick_UpdateHealth(float DeltaTime);
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+		void DeflectProjectile(AActor* HitProjectile);
+
+protected:
+//AS: =========================================================================
+//AS: Respawning ==============================================================
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Respawning")
+		AActor* LatestCheckpoint;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Respawning")
+		int32 LatestCheckpointIndex;
+
+	UFUNCTION(BlueprintCallable, Category = "Respawning")
+		void Respawn();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Respawning")
+		void OnRespawned();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Respawning")
+		void OnCheckpointUpdated();
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Respawning")
+		void OnTouchCheckpoint(AActor* Checkpoint);
 
 //AS: =========================================================================
 //AS: =========================================================================
@@ -405,7 +441,12 @@ public:
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
+	UFUNCTION(BlueprintCallable, Category = "Ash Movement") FORCEINLINE
+		TEnumAsByte<EAshCustomMoveState::Type> GetCurrentAshMoveState() const { return AshMoveState_Current; };
+
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 		void OnKilledEnemy(AActor* KilledEnemy);
+
+
 };
 

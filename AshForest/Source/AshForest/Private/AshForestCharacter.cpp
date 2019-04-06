@@ -10,7 +10,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine.h"
-#include "TargetableInterface.h"
+#include "AshForestCheckpoint.h"
+#include "AshForestProjectile.h"
 
 //////////////////////////////////////////////////////////////////////////
 // AAshForestCharacter
@@ -83,6 +84,9 @@ AAshForestCharacter::AAshForestCharacter()
 
 	MeshInterpSpeed_Location = 8.f;
 	MeshInterpSpeed_Rotation = 5.f;
+
+	HealthRestoreRate = 1.f;
+	MaxHealth = 100.f;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -121,28 +125,28 @@ void AAshForestCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 void AAshForestCharacter::TurnAtRate(float Rate)
 {
 	// calculate delta for this frame from the rate information
-	if (!HasLockOnTarget())
+	if (!IsLockedOn())
 		AddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());
-	else if (FMath::Abs(Rate) >= .75f && HasLockOnTarget())
+	else if (FMath::Abs(Rate) >= .75f && IsLockedOn())
 		TrySwitchLockOnTarget(Rate);
 }
 
 void AAshForestCharacter::LookUpAtRate(float Rate)
 {
 	// calculate delta for this frame from the rate information
-	if(!HasLockOnTarget())
+	if(!IsLockedOn())
 		AddControllerPitchInput(Rate * BaseLookUpRate * GetWorld()->GetDeltaSeconds());
 }
 
 void AAshForestCharacter::AddControllerPitchInput(float Val)
 {
-	if (!HasLockOnTarget())
+	if (!IsLockedOn())
 		Super::AddControllerPitchInput(Val);
 }
 
 void AAshForestCharacter::AddControllerYawInput(float Val)
 {
-	if (!HasLockOnTarget())
+	if (!IsLockedOn())
 		Super::AddControllerYawInput(Val);
 }
 
@@ -153,7 +157,7 @@ void AAshForestCharacter::MoveForward(float Value)
 		// find out which way is forward
 		FRotator Rotation = GetControlRotation();
 
-		if (HasLockOnTarget())
+		if (LockOnTarget_Current != NULL)
 			Rotation = (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation();
 
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -171,7 +175,7 @@ void AAshForestCharacter::MoveRight(float Value)
 		// find out which way is right
 		FRotator Rotation = GetControlRotation();
 
-		if (HasLockOnTarget())
+		if (LockOnTarget_Current != NULL)
 			Rotation = (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation();
 
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -185,7 +189,7 @@ void AAshForestCharacter::MoveRight(float Value)
 
 void AAshForestCharacter::OnMouseWheelScroll(float Rate)
 {
-	if (Rate != 0.f && HasLockOnTarget())
+	if (Rate != 0.f && IsLockedOn())
 	{
 		//if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, .5f, FColor::Green, FString::Printf(TEXT("Mouse Wheel: %3.2f"), Rate));
 
@@ -196,11 +200,12 @@ void AAshForestCharacter::OnMouseWheelScroll(float Rate)
 	}
 }
 
-void AAshForestCharacter::BeginPlay()
+void AAshForestCharacter::BeginPlay() 
 {
 	Super::BeginPlay();
 
 	DashCharges_Current = DashCharges_MAX;
+	LatestCheckpointIndex = -1;
 
 	ResetMeshTransform();
 }
@@ -208,6 +213,8 @@ void AAshForestCharacter::BeginPlay()
 void AAshForestCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	Tick_UpdateHealth(DeltaTime);
 
 	if (bWantsToDash)
 	{
@@ -244,7 +251,7 @@ void AAshForestCharacter::Tick(float DeltaTime)
 
 	Tick_UpdateCamera(DeltaTime);
 
-	if (HasLockOnTarget()) 
+	if (IsLockedOn()) 
 		Tick_LockedOn(DeltaTime);
 
 	if (bIsMeshTransformInterpolating)
@@ -339,7 +346,7 @@ void AAshForestCharacter::TryDash()
 		if (dir == FVector::ZeroVector)
 		{
 			FRotator rotation = GetControlRotation();
-			if (HasLockOnTarget())
+			if (LockOnTarget_Current != NULL)
 				rotation = (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation();
 				
 			dir = FRotator(0, rotation.Yaw, 0).Vector();
@@ -430,7 +437,7 @@ void AAshForestCharacter::Tick_Dash(float DeltaTime)
 
 	capRadius += 15.f;
 
-	if (HasLockOnTarget() && (GetActorLocation() - LockOnTarget_Current->GetComponentLocation()).SizeSquared2D() > FMath::Square(DashDistance_MAX * .5f))
+	if (LockOnTarget_Current != NULL && (GetActorLocation() - LockOnTarget_Current->GetComponentLocation()).SizeSquared2D() > FMath::Square(DashDistance_MAX * .5f))
 	{
 		auto dirFromTarget = (GetActorLocation() - LockOnTarget_Current->GetComponentLocation()).GetSafeNormal2D();
 
@@ -470,47 +477,45 @@ void AAshForestCharacter::Tick_Dash(float DeltaTime)
 	{
 		for (auto dashHit : dashHits)
 		{
-			if (dashHit.Actor == NULL || DashDamagedActors.Contains(dashHit.Actor.Get()) || (dashHit.Location - GetActorLocation()).SizeSquared2D() > 5.f)
+			if (dashHit.Actor == NULL)
 				continue;
 
-			if (dashHit.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()))
+			if (dashHit.Actor->IsA(AAshForestProjectile::StaticClass()))
+			{
+				if (!DashDamagedActors.Contains(dashHit.Actor.Get()))
+				{
+					DashDamagedActors.Add(dashHit.Actor.Get());
+					DeflectProjectile(dashHit.Actor.Get());
+				}
+				
+				continue;
+			}
+
+			if (!DashDamagedActors.Contains(dashHit.Actor.Get()) && dashHit.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()))
 			{
 				if (ITargetableInterface::Execute_CanBeDamaged(dashHit.Actor.Get(), this, dashHit))
 				{
-					auto bStopDash = false;
-
 					if (bDebugAshMovement)
 						DrawDebugSphere(GetWorld(), dashHit.ImpactPoint, 75.f, 32, FColor::Yellow, false, 5.f, 0, 5.f);
-
-					if (!ITargetableInterface::Execute_IgnoresCollisionWithDamager(dashHit.Actor.Get(), this, dashHit))
-					{
-						EndDashWithHit(dashHit);
-						bStopDash = true;
-					}
 
 					ITargetableInterface::Execute_TakeDamage(dashHit.Actor.Get(), this, DashDamage, dashHit);
 
-					if (bStopDash)
+					if (dashHit.Actor != NULL)
 					{
-						return;
-					}
-					else if (dashHit.Actor != NULL)
-					{
-						GetCapsuleComponent()->IgnoreActorWhenMoving(dashHit.Actor.Get(), true);
+						if(ITargetableInterface::Execute_IgnoresCollisionWithDamager(dashHit.Actor.Get(), this, dashHit))
+							GetCapsuleComponent()->IgnoreActorWhenMoving(dashHit.Actor.Get(), true);
+						
 						DashDamagedActors.Add(dashHit.Actor.Get());
+						
+						if (auto hitChar = Cast<ADamageableCharacter>(dashHit.Actor.Get()))
+						{
+							auto dashImpulse = ((CurrentDashDir + FVector(0.f, 0.f, .25f)) * .5f) * 5000.f;
+							hitChar->GetCharacterMovement()->AddImpulse(dashImpulse, true);
+						}
 					}
-
-				}
-				else
-				{
-					if (bDebugAshMovement)
-						DrawDebugSphere(GetWorld(), dashHit.ImpactPoint, 75.f, 32, FColor::Yellow, false, 5.f, 0, 5.f);
-
-					EndDashWithHit(dashHit);
-					return;
 				}
 			}
-			else
+			else if ((dashHit.Location - GetActorLocation()).SizeSquared2D() <= FMath::Square(5.f))
 			{
 				//AS: Try to dash around smaller blockers or up ramps
 				auto hitForwardDot = FVector::DotProduct(dashHit.ImpactNormal, OriginalDashDir);
@@ -597,19 +602,14 @@ void AAshForestCharacter::EndDashWithHit(const FHitResult EndHit)
 
 	if (EndHit.ImpactNormal != FVector::ZeroVector)
 	{
-		if (!CanClimbHitSurface(true, EndHit))
-		{
-			auto impulseDir = ((EndHit.ImpactNormal + FVector::UpVector) * .5f).GetSafeNormal();
-			((UCharacterMovementComponent*)GetMovementComponent())->AddImpulse(impulseDir * 1000.f, true);
-		}
-		else
+		if (CanClimbHitSurface(true, EndHit))
 			StartClimbing(EndHit);
 	}
 }
 
 bool AAshForestCharacter::CanClimbHitSurface(const bool & bIsForStart, const FHitResult & SurfaceHit) const
 {
-	if (HasLockOnTarget() || SurfaceHit.Component == NULL || !SurfaceHit.Component->CanBeClimbed())
+	if (IsLockedOn() || SurfaceHit.Component == NULL || !SurfaceHit.Component->CanBeClimbed())
 		return false;
 
 	if (bIsForStart)
@@ -686,9 +686,6 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 
 		SoftSetActorLocation(FMath::VInterpTo(climbingHit.Location, GetActorLocation(), DeltaTime, 5.f), true);
 		SetActorRotation(FRotator(0.f, (CurrentDirToClimbingSurface).Rotation().Yaw, 0.f));
-
-		//auto newMeshRot = FRotationMatrix::MakeFromZX(climbingHit.ImpactNormal, projectedClimbDir).Rotator();
-		//MeshTargetRelRotation = (GetActorRotation() - newMeshRot);
 	}
 	else
 	{
@@ -942,13 +939,13 @@ void AAshForestCharacter::OnLockOnReleased()
 
 void AAshForestCharacter::OnLockOnSwitchInput(float Dir)
 {
-	if (HasLockOnTarget())
+	if (IsLockedOn())
 		WantsToSwitchLockOnTargetDir = Dir;
 }
 
 void AAshForestCharacter::TryLockOn()
 {
-	if (!HasLockOnTarget())
+	if (LockOnTarget_Current == NULL)
 		SetLockOnTarget(FindLockOnTarget());
 	else
 		SetLockOnTarget(NULL);
@@ -981,7 +978,7 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 
 	if (OverrideViewRot != FRotator::ZeroRotator)
 		rotation = OverrideViewRot;
-	else if (HasLockOnTarget())
+	else if (LockOnTarget_Current != NULL)
 		rotation = (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation();
 
 	auto YawRotationVec = FRotator(0, rotation.Yaw, 0).Vector();
@@ -1005,7 +1002,11 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 
 		for (FOverlapResult currTarget : potentialTargets)
 		{
-			if (currTarget.Actor == NULL || !currTarget.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()) || !ITargetableInterface::Execute_CanBeTargeted(currTarget.Actor.Get(), this))
+			if (currTarget.Actor == NULL || currTarget.Actor == this || !currTarget.Actor->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass()) || !ITargetableInterface::Execute_CanBeTargeted(currTarget.Actor.Get(), this))
+				continue;
+
+			//AS: Don't switch to non-enemy targets if your current target is a damageable character
+			if (LockOnTarget_Current != NULL && LockOnTarget_Current->GetOwner()->IsA(ADamageableCharacter::StaticClass()) && !currTarget.Actor->IsA(ADamageableCharacter::StaticClass()))
 				continue;
 
 			if (ITargetableInterface::Execute_GetTargetableComponents(currTarget.Actor.Get(), currPotentialTargetsArray))
@@ -1018,7 +1019,8 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 			else
 				continue;
 
-			if ((HasLockOnTarget() && currPotentialTarget == LockOnTarget_Current) 
+			//AS: Code to ignore previous target
+			if ((LockOnTarget_Current != NULL && currPotentialTarget == LockOnTarget_Current)
 				|| (bIgnorePreviousTarget && currPotentialTarget == LockOnTarget_Previous)
 				|| PotentialTargets.Contains(currPotentialTarget))
 				continue;
@@ -1063,22 +1065,24 @@ USceneComponent* AAshForestCharacter::GetPotentialLockOnTargets(TArray<USceneCom
 
 void AAshForestCharacter::SetLockOnTarget(USceneComponent* NewLockOnTarget_Current)
 {
-	if (LockOnTarget_Current != NewLockOnTarget_Current)
+	if (NewLockOnTarget_Current == NULL || LockOnTarget_Current != NewLockOnTarget_Current)
 	{
-		LockOnTarget_Previous = LockOnTarget_Current;
+		if(LockOnTarget_Current != NULL)
+			LockOnTarget_Previous = LockOnTarget_Current;
+
 		LockOnTarget_Current = NewLockOnTarget_Current;
 		OnLockOnTargetUpdated();
 	}
 }
 
-bool AAshForestCharacter::HasLockOnTarget(USceneComponent* SpecificTarget /*= NULL*/) const
+bool AAshForestCharacter::IsLockedOn(USceneComponent* ToSpecificTarget /*= NULL*/) const
 {
-	return SpecificTarget ? LockOnTarget_Current == SpecificTarget : LockOnTarget_Current != NULL;
+	return ToSpecificTarget ? LockOnTarget_Current == ToSpecificTarget : (LockOnTarget_Current != NULL || bShouldBeLockedOn);
 }
 
 bool AAshForestCharacter::TrySwitchLockOnTarget(const float & RightInput)
 {
-	if (RightInput == 0.f || !HasLockOnTarget() || GetWorld()->TimeSince(LastSwitchLockOnTargetTime) < AllowSwitchLockOnTargetInterval)
+	if (RightInput == 0.f || LockOnTarget_Current == NULL || GetWorld()->TimeSince(LastSwitchLockOnTargetTime) < AllowSwitchLockOnTargetInterval)
 		return false;
 
 	TArray<USceneComponent*> potentialTargets;
@@ -1131,20 +1135,20 @@ bool AAshForestCharacter::TrySwitchLockOnTarget(const float & RightInput)
 
 void AAshForestCharacter::SwitchLockOnTarget_Left()
 {
-	if (HasLockOnTarget())
+	if (IsLockedOn())
 		WantsToSwitchLockOnTargetDir = -1;
 }
 
 void AAshForestCharacter::SwitchLockOnTarget_Right()
 {
-	if (HasLockOnTarget())
+	if (IsLockedOn())
 		WantsToSwitchLockOnTargetDir = 1;
 }
 
 void AAshForestCharacter::OnLockOnTargetUpdated_Implementation()
 {
-	//AS: Event for lock-on target changed
-	bUseControllerRotationYaw = HasLockOnTarget();
+	bShouldBeLockedOn = LockOnTarget_Current != NULL;
+	bUseControllerRotationYaw = LockOnTarget_Current != NULL;
 }
 
 void AAshForestCharacter::Tick_LockedOn(float DeltaTime)
@@ -1183,7 +1187,7 @@ void AAshForestCharacter::Tick_LockedOn(float DeltaTime)
 
 void AAshForestCharacter::Tick_UpdateCamera(float DeltaTime)
 {
-	if (HasLockOnTarget())
+	if (IsLockedOn())
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, 2.5f);
 	else
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, FVector(0.f, 0.f, 60.f), DeltaTime, 4.f);
@@ -1251,8 +1255,6 @@ void AAshForestCharacter::Tick_MeshInterp(float DeltaTime)
 			GetMesh()->SetRelativeRotation(MeshTargetRelRotation);
 	}
 
-	//DrawDebugCoordinateSystem(GetWorld(), GetMesh()->GetComponentLocation(), GetMesh()->GetComponentRotation(), 100.f, false, -1.f, 0, 3.f);
-
 	bIsMeshTransformInterpolating = bStillInterping;
 }
 
@@ -1262,6 +1264,33 @@ void AAshForestCharacter::ResetMeshTransform()
 	MeshTargetRelRotation = FRotator(0.f, 270.f, 0.f);
 
 	bIsMeshTransformInterpolating = true;
+}
+
+void AAshForestCharacter::Tick_UpdateHealth(float DeltaTime)
+{
+	if (CurrentHealth < MaxHealth)
+	{
+		CurrentHealth = FMath::Clamp(CurrentHealth + (HealthRestoreRate * DeltaTime), 0.f, MaxHealth);
+	}
+}
+
+void AAshForestCharacter::DeflectProjectile(AActor* HitProjectile)
+{
+	if (HitProjectile->IsA(AAshForestProjectile::StaticClass()))
+	{
+		GetCapsuleComponent()->IgnoreActorWhenMoving(HitProjectile, true);
+		((AAshForestProjectile*)HitProjectile)->GetCollisionComponent()->IgnoreActorWhenMoving(this, true);
+
+		auto deflectDir = LockOnTarget_Current != NULL ? (LockOnTarget_Current->GetComponentLocation() - HitProjectile->GetActorLocation()).GetSafeNormal() : CurrentDashDir;
+		
+		if (LockOnTarget_Current != NULL && FVector::DotProduct(-((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->GetVelocity().GetSafeNormal(), deflectDir) <= .1f)
+			deflectDir = CurrentDashDir;
+
+		((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->OverrideVelocity((DashSpeed * .5f) * deflectDir);
+		((AAshForestProjectile*)HitProjectile)->Instigator = NULL;
+
+		DrawDebugCoordinateSystem(GetWorld(), HitProjectile->GetActorLocation(), ((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->GetVelocity().GetSafeNormal().Rotation(), 100.f, false, 5.f, 0, 3.f);
+	}
 }
 
 void AAshForestCharacter::OnKilledEnemy(AActor* KilledEnemy)
@@ -1284,9 +1313,64 @@ void AAshForestCharacter::OnKilledEnemy(AActor* KilledEnemy)
 
 void AAshForestCharacter::AutoSwitchLockOnTarget(USceneComponent* OldTarget /*= NULL*/)
 {
-	if (HasLockOnTarget(OldTarget))
+	if (LockOnTarget_Current == OldTarget)
 	{
 		SetLockOnTarget(NULL);
-		SetLockOnTarget(FindLockOnTarget(true, (OldTarget->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation()));
+
+		if (OldTarget)
+			SetLockOnTarget(FindLockOnTarget(true, (OldTarget->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation()));
+		else
+			SetLockOnTarget(FindLockOnTarget(false));
 	}
+	else
+		SetLockOnTarget(NULL);
+}
+
+void AAshForestCharacter::TargetableDie(const AActor* Murderer)
+{
+	ITargetableInterface::Execute_OnTargetableDeath(this, Murderer);
+	Respawn();
+}
+
+void AAshForestCharacter::OnTouchCheckpoint(AActor* Checkpoint)
+{
+	if (Checkpoint && Checkpoint->IsA(AAshForestCheckpoint::StaticClass()))
+	{
+		auto index = ((AAshForestCheckpoint*)Checkpoint)->GetCheckpointIndex();
+
+		if (index >= 0 && index > LatestCheckpointIndex)
+		{
+			LatestCheckpoint = Checkpoint;
+			LatestCheckpointIndex = index;
+
+			OnCheckpointUpdated();
+		}
+	}
+}
+
+void AAshForestCharacter::OnCheckpointUpdated_Implementation()
+{
+
+}
+
+void AAshForestCharacter::Respawn()
+{
+	if (LatestCheckpoint)
+	{
+		CurrentHealth = MaxHealth;
+
+		auto newTrans = ((AAshForestCheckpoint*)LatestCheckpoint)->GetRespawnTransform();
+		newTrans.SetScale3D(FVector(1.f));
+
+		SetActorTransform(newTrans);
+		GetController()->SetControlRotation(newTrans.GetRotation().Rotator());
+		SetLockOnTarget(NULL);
+
+		OnRespawned();
+	}
+}
+
+void AAshForestCharacter::OnRespawned_Implementation()
+{
+
 }

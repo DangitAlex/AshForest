@@ -3,49 +3,58 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
-#include "TargetableInterface.h"
+#include "DamageableCharacter.h"
 #include "AIController.h"
+#include "AshForestProjectile.h"
 #include "AshForestCreature.generated.h"
 
 UCLASS()
-class ASHFOREST_API AAshForestCreature : public ACharacter, public ITargetableInterface
+class ASHFOREST_API AAshForestCreature : public ADamageableCharacter
 {
 	GENERATED_BODY()
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"), Category = "Lock-On")
-		USceneComponent* TargetableComp;
+	UPROPERTY(EditDefaultsOnly, Category = "Combat")
+		TSubclassOf<AAshForestProjectile> AttackProjectileClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat")
+		float AttackInterval_MIN;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Combat")
+		float AttackInterval_MAX;
+
+protected:
+
+	UPROPERTY(EditAnywhere, Category = "Combat")
+		bool bAllowAttacking;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Combat")
+		float CurrentAttackInterval;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Combat")
+		float LastAttackTime;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Combat")
+		AAshForestProjectile* LastFiredProjectile;
 
 public:
 	// Sets default values for this character's properties
 	AAshForestCreature();
 
 protected:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Lock On")
-		FName TargetableComponentName;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Health")
-		float MaxHealth;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Health")
-		float CurrentHealth;
-
-	UFUNCTION(BlueprintCallable, Category = "Health")
-		void Die(const AActor* Murderer);
-
-	UFUNCTION(BlueprintNativeEvent, Category = "Health")
-		void OnDeath(const AActor* Murderer);
-
 	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
 
 public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
 
-	virtual bool GetTargetableComponents_Implementation(TArray<USceneComponent*> & TargetableComps) override;
 	virtual bool CanBeTargeted_Implementation(const AActor* ByActor) override;
 	virtual bool CanBeDamaged_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent) override;
-	virtual bool IgnoresCollisionWithDamager_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent) override;
-	virtual void TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent) override;
+	virtual void OnTargetableDeath_Implementation(const AActor* Murderer) override;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Combat")
+		bool CanAttackTarget(const AActor* ForTarget);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Combat")
+		FTransform GetAttackOrigin(const AActor* ForTarget);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+		void AttackTarget(const AActor* ForTarget);
 };

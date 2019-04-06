@@ -9,41 +9,12 @@ AAshForestCreature::AAshForestCreature()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	TargetableComponentName = "TargetableComp";
+	MaxHealth = 250.f;
 
-	TargetableComp = CreateOptionalDefaultSubobject<USceneComponent>(AAshForestCreature::TargetableComponentName);
-	if (TargetableComp)
-		TargetableComp->SetupAttachment(GetRootComponent());
+	bAllowAttacking = true;
 
-	MaxHealth = 100.f;
-}
-
-// Called when the game starts or when spawned
-void AAshForestCreature::BeginPlay()
-{
-	Super::BeginPlay();
-	
-	CurrentHealth = MaxHealth;
-}
-
-// Called every frame
-void AAshForestCreature::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-}
-
-bool AAshForestCreature::GetTargetableComponents_Implementation(TArray<USceneComponent*> & TargetableComps)
-{
-	TargetableComps.Empty();
-
-	if (TargetableComp != NULL)
-	{
-		TargetableComps.Add(TargetableComp);
-		return true;
-	}
-
-	return false;
+	AttackInterval_MIN = 1.f;
+	AttackInterval_MAX = 4.f;
 }
 
 bool AAshForestCreature::CanBeTargeted_Implementation(const AActor* ByActor)
@@ -56,31 +27,44 @@ bool AAshForestCreature::CanBeDamaged_Implementation(const AActor* DamageCauser,
 	return DamageCauser->IsA(AAshForestCharacter::StaticClass());
 }
 
-
-bool AAshForestCreature::IgnoresCollisionWithDamager_Implementation(const AActor* DamageCauser, const FHitResult & DamageHitEvent)
+void AAshForestCreature::OnTargetableDeath_Implementation(const AActor* Murderer)
 {
-	return DamageCauser->IsA(AAshForestCharacter::StaticClass());
+	if (Murderer && Murderer->IsA(AAshForestCharacter::StaticClass()))
+		((AAshForestCharacter*)Murderer)->OnKilledEnemy(this);
 }
 
-void AAshForestCreature::TakeDamage_Implementation(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent)
+bool AAshForestCreature::CanAttackTarget_Implementation(const AActor* ForTarget)
 {
-	if (!DamageCauser || IsPendingKill())
+	return bAllowAttacking && AttackProjectileClass != NULL && ForTarget != NULL && GetWorld()->TimeSince(LastAttackTime) > CurrentAttackInterval;
+}
+
+FTransform AAshForestCreature::GetAttackOrigin_Implementation(const AActor* ForTarget)
+{
+	const FVector spawnLoc = GetActorLocation();
+	const FRotator spawnRot = (ForTarget->GetActorLocation() - spawnLoc).GetSafeNormal().Rotation();
+
+	return FTransform(spawnRot, spawnLoc, FVector(1.f));
+}
+
+void AAshForestCreature::AttackTarget(const AActor* ForTarget)
+{
+	if (AttackProjectileClass == NULL || ForTarget == NULL)
 		return;
 
-	CurrentHealth -= DamageAmount;
+	LastAttackTime = GetWorld()->GetTimeSeconds();
+	CurrentAttackInterval = FMath::RandRange(AttackInterval_MIN, AttackInterval_MAX);
+	
+	const FTransform spawnTrans = GetAttackOrigin(ForTarget);
+	auto temp = GetWorld()->SpawnActorDeferred<AAshForestProjectile>(AttackProjectileClass.Get(), spawnTrans, (AActor*)this, (APawn*)this, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	temp->InitProjectile(this);
+	temp->FinishSpawning(spawnTrans, true);
 
-	if (CurrentHealth <= 0.f)
-		Die(DamageCauser);
-}
+	if (temp->IsValidLowLevel())
+	{
+		LastFiredProjectile = temp;
 
-void AAshForestCreature::Die(const AActor* Murderer)
-{
-	OnDeath(Murderer);
-	Destroy();
-}
-
-void AAshForestCreature::OnDeath_Implementation(const AActor* Murderer)
-{
-	if (Murderer->IsA(AAshForestCharacter::StaticClass()))
-		((AAshForestCharacter*)Murderer)->OnKilledEnemy(this);
+		//AS: Reset To fix any directional errors caused by adjusting the spawn location
+		const FTransform spawnTrans = GetAttackOrigin(ForTarget);
+		LastFiredProjectile->SetActorTransform(spawnTrans);
+	}
 }

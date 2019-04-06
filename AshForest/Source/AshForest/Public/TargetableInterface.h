@@ -21,7 +21,6 @@ class ASHFOREST_API ITargetableInterface
 	GENERATED_BODY()
 
 public:
-	
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Lock On")
 		bool GetTargetableComponents(TArray<USceneComponent*> & TargetableComps);
 
@@ -36,4 +35,9 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
 		void TakeDamage(const AActor* DamageCauser, const float & DamageAmount, const FHitResult & DamageHitEvent);
+
+	virtual void TargetableDie(const AActor* Murderer);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Damage")
+		void OnTargetableDeath(const AActor* Murderer);
 };
