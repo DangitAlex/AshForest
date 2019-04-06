@@ -53,6 +53,11 @@ void AAshForestProjectile::OnProjectileExplode_Implementation(const FHitResult &
 	Destroy();
 }
 
+void AAshForestProjectile::OnDeflected_Implementation(const AActor* DeflectedByActor)
+{
+	//DrawDebugCoordinateSystem(GetWorld(), HitProjectile->GetActorLocation(), ((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->GetVelocity().GetSafeNormal().Rotation(), 100.f, false, 5.f, 0, 3.f);
+}
+
 void AAshForestProjectile::OnProjectileHit(UPrimitiveComponent * HitComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, FVector NormalImpulse, const FHitResult & Hit)
 {
 	if (auto hitPlayer = Cast<AAshForestCharacter>(OtherActor))

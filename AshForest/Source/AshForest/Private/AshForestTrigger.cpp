@@ -38,6 +38,9 @@ void AAshForestTrigger::BeginPlay()
 
 		for (auto currActor : TriggeredByActorsDestruction)
 		{
+			if (!currActor)
+				continue;
+
 			currActor->OnDestroyed.AddDynamic(this, &AAshForestTrigger::OnActorDestruction);
 		}
 	}

@@ -85,7 +85,7 @@ AAshForestCharacter::AAshForestCharacter()
 	MeshInterpSpeed_Location = 8.f;
 	MeshInterpSpeed_Rotation = 5.f;
 
-	HealthRestoreRate = 1.f;
+	HealthRestoreRate = 2.f;
 	MaxHealth = 100.f;
 }
 
@@ -1289,7 +1289,7 @@ void AAshForestCharacter::DeflectProjectile(AActor* HitProjectile)
 		((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->OverrideVelocity((DashSpeed * .5f) * deflectDir);
 		((AAshForestProjectile*)HitProjectile)->Instigator = NULL;
 
-		DrawDebugCoordinateSystem(GetWorld(), HitProjectile->GetActorLocation(), ((AAshForestProjectile*)HitProjectile)->GetProjectileMovement()->GetVelocity().GetSafeNormal().Rotation(), 100.f, false, 5.f, 0, 3.f);
+		((AAshForestProjectile*)HitProjectile)->OnDeflected(this);
 	}
 }
 

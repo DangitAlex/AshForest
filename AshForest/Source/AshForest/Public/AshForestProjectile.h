@@ -50,11 +50,14 @@ protected:
 
 public:	
 
-	UFUNCTION(BlueprintCallable) FORCEINLINE
+	UFUNCTION(BlueprintCallable, Category = Projectile) FORCEINLINE
 		UCapsuleComponent* GetCollisionComponent() const { return CollisionComp; };
 
-	UFUNCTION(BlueprintCallable) FORCEINLINE
+	UFUNCTION(BlueprintCallable, Category = Projectile) FORCEINLINE
 		UProjectileMovementComponent* GetProjectileMovement() const { return ProjMoveComp; };
+
+	UFUNCTION(BlueprintNativeEvent, Category = Projectile)
+		void OnDeflected(const AActor* DeflectedByActor);
 
 	UFUNCTION()
 		void OnProjectileHit(UPrimitiveComponent * HitComponent, AActor * OtherActor, UPrimitiveComponent * OtherComp, FVector NormalImpulse, const FHitResult & Hit);
