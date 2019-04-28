@@ -18,6 +18,19 @@ namespace EAshCustomMoveState
 	};
 }
 
+USTRUCT(Blueprintable)
+struct FInitialCharMovementVars
+{
+	GENERATED_USTRUCT_BODY()
+
+	float InitialGravityScale;
+	float InitialAcceleration;
+	float InitialGroundFriction;
+	float InitialMaxWalkSpeed;
+	float InitialFallingLateralFriction;
+	float InitialAirControl;
+};
+
 UCLASS(config=Game)
 class AAshForestCharacter : public ADamageableCharacter
 {
@@ -30,6 +43,8 @@ class AAshForestCharacter : public ADamageableCharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* FollowCamera;
+
+	FInitialCharMovementVars MyInitialMovementVars;
 public:
 	AAshForestCharacter();
 

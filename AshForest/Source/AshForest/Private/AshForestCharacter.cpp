@@ -207,6 +207,12 @@ void AAshForestCharacter::BeginPlay()
 	DashCharges_Current = DashCharges_MAX;
 	LatestCheckpointIndex = -1;
 
+	MyInitialMovementVars.InitialGravityScale = GetCharacterMovement()->GravityScale;
+	MyInitialMovementVars.InitialGroundFriction = GetCharacterMovement()->GroundFriction;
+	MyInitialMovementVars.InitialMaxWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
+	MyInitialMovementVars.InitialFallingLateralFriction = GetCharacterMovement()->FallingLateralFriction;
+	MyInitialMovementVars.InitialAirControl = GetCharacterMovement()->AirControl;
+
 	ResetMeshTransform();
 }
 
@@ -273,11 +279,7 @@ void AAshForestCharacter::Tick(float DeltaTime)
 
 	//AS: Restore Air Control after wall jumping
 	if (GetCharacterMovement()->AirControl == 0.f && GetWorld()->TimeSince(LastWallJumpTime) > DashCooldownTime_AfterWallJump)
-	{
-		auto MyPlayerCDO = GetDefault<AAshForestCharacter>();
-		GetCharacterMovement()->AirControl = MyPlayerCDO->GetCharacterMovement()->AirControl;
-	}
-
+		GetCharacterMovement()->AirControl = MyInitialMovementVars.InitialAirControl;
 }
 
 void AAshForestCharacter::Jump()
@@ -345,10 +347,7 @@ void AAshForestCharacter::TryDash()
 		//AS: Set the dash dir to the look vector if the player wasn't pressing any movement inputs
 		if (dir == FVector::ZeroVector)
 		{
-			FRotator rotation = GetControlRotation();
-			if (LockOnTarget_Current != NULL)
-				rotation = (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation();
-				
+			const FRotator rotation = LockOnTarget_Current != nullptr ? (LockOnTarget_Current->GetComponentLocation() - GetActorLocation()).GetSafeNormal2D().Rotation() : GetControlRotation();
 			dir = FRotator(0, rotation.Yaw, 0).Vector();
 		}
 
@@ -443,8 +442,8 @@ void AAshForestCharacter::Tick_Dash(float DeltaTime)
 
 		if (FVector::DotProduct(-dirFromTarget, OriginalDashDir) <= 0.f)
 		{
-			auto prevDirFromTarget = (PrevDashLoc - LockOnTarget_Current->GetComponentLocation()).GetSafeNormal2D();
-			auto deltaAngle = FMath::Acos(FVector::DotProduct(dirFromTarget, prevDirFromTarget)) * (180.f / PI);
+			const FVector prevDirFromTarget = (PrevDashLoc - LockOnTarget_Current->GetComponentLocation()).GetSafeNormal2D();
+			float deltaAngle = FMath::Acos(FVector::DotProduct(dirFromTarget, prevDirFromTarget)) * (180.f / PI);
 
 			if (FVector::CrossProduct(dirFromTarget, prevDirFromTarget).Z < 0.f)
 				deltaAngle *= -1.f;
@@ -461,10 +460,10 @@ void AAshForestCharacter::Tick_Dash(float DeltaTime)
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
 
-	auto traceStart = GetActorLocation();
-	auto traceEnd = GetActorLocation() + (OriginalDashDir * DashDistance_Current);
+	const FVector traceStart = GetActorLocation();
+	const FVector traceEnd = GetActorLocation() + (OriginalDashDir * DashDistance_Current);
 	TArray<FHitResult> dashHits;
-	auto bFoundHit = GetWorld()->SweepMultiByChannel(dashHits, traceStart, traceEnd, GetActorRotation().Quaternion(), ECollisionChannel::ECC_Visibility, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
+	const bool bFoundHit = GetWorld()->SweepMultiByChannel(dashHits, traceStart, traceEnd, GetActorRotation().Quaternion(), ECollisionChannel::ECC_Visibility, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
 	
 	if (bDebugAshMovement)
 	{
@@ -566,16 +565,16 @@ void AAshForestCharacter::EndDash()
 
 	LastDashEndTime = GetWorld()->GetTimeSeconds();
 
-	auto movementCompCDO = GetDefault<UCharacterMovementComponent>();
-	GetCharacterMovement()->GravityScale = movementCompCDO->GravityScale;
-	GetCharacterMovement()->GroundFriction = movementCompCDO->GroundFriction;
-	GetCharacterMovement()->MaxWalkSpeed = movementCompCDO->MaxWalkSpeed;
-	GetCharacterMovement()->FallingLateralFriction = movementCompCDO->FallingLateralFriction;
+	GetCharacterMovement()->GravityScale = MyInitialMovementVars.InitialGravityScale;
+	GetCharacterMovement()->GroundFriction = MyInitialMovementVars.InitialGroundFriction;
+	GetCharacterMovement()->MaxWalkSpeed = MyInitialMovementVars.InitialMaxWalkSpeed;
+	GetCharacterMovement()->FallingLateralFriction = MyInitialMovementVars.InitialFallingLateralFriction;
+	GetCharacterMovement()->AirControl = MyInitialMovementVars.InitialAirControl;
 
 	//AS: Un-ignore actors we dashed through
 	for (auto currActor : DashDamagedActors)
 	{
-		if (!currActor->IsValidLowLevel())
+		if (!currActor)
 			continue;
 
 		GetCapsuleComponent()->IgnoreActorWhenMoving(currActor, false);
@@ -583,13 +582,9 @@ void AAshForestCharacter::EndDash()
 
 	//AS: Make sure that we can't go extra distance due to large tick delta times
 	if ((GetActorLocation() - OriginalDashStartLocation).Size2D() > DashDistance_MAX)
-	{
-		auto newDashEndLoc = OriginalDashStartLocation + ((GetActorLocation() - OriginalDashStartLocation).GetSafeNormal2D() * DashDistance_MAX);
-		SetActorLocation(newDashEndLoc);
-	}
+		SetActorLocation(OriginalDashStartLocation + ((GetActorLocation() - OriginalDashStartLocation).GetSafeNormal2D() * DashDistance_MAX));
 
-	auto newVel = GetVelocity().GetClampedToSize2D(0.f, 1000.f);
-	newVel.Z = 0.f;
+	auto newVel = GetVelocity().GetSafeNormal2D() * (GetCharacterMovement()->MaxWalkSpeed * 2.f);
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 }
 
