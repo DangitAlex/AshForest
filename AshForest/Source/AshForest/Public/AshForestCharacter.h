@@ -292,21 +292,6 @@ protected:
 		float LockOnFindTarget_WithinLookDirAngleDelta;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
-		float LockOnInterpViewToTargetSpeed;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
-		FVector DefaultCameraSocketOffset;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
-		FVector LockedOnCameraSocketOffset;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
-		float LockedOnInterpSocketOffsetSpeed_In;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
-		float LockedOnInterpSocketOffsetSpeed_Out;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
 		float AllowSwitchLockOnTargetInterval;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Lock On")
@@ -375,7 +360,34 @@ protected:
 //AS: =========================================================================
 //AS: Camera  =================================================================
 
-	UFUNCTION(BlueprintCallable, Category = "Lock On")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		float LockOnInterpViewToTargetSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
+		float LockedOnInterpCameraSocketOffsetSpeed_IN;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lock On")
+		float LockedOnInterpCameraSocketOffsetSpeed_OUT;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		FVector DefaultCameraSocketOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		FVector CameraSocketVelocityOffset_MAX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		FVector LockedOnCameraSocketOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		float CameraArmLength_MAX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		FVector2D CameraArmLengthInterpSpeeds;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		float CameraArmLength_Default;
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
 		void Tick_UpdateCamera(float DeltaTime);
 
 //AS: =========================================================================

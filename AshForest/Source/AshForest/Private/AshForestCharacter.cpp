@@ -40,8 +40,9 @@ AAshForestCharacter::AAshForestCharacter()
 	GetCharacterMovement()->JumpZVelocity = 600.f;
 	GetCharacterMovement()->AirControl = 0.2f;
 
-	DefaultCameraSocketOffset = FVector(0.f, 0.f, 90.f);
-	LockedOnCameraSocketOffset = FVector(50.f, 250.f, 100.f);
+	DefaultCameraSocketOffset.Set(0.f, 0.f, 90.f);
+	CameraSocketVelocityOffset_MAX.Set(0.f, 0.f, 110.f);
+	LockedOnCameraSocketOffset.Set(50.f, 250.f, 100.f);
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -78,9 +79,12 @@ AAshForestCharacter::AAshForestCharacter()
 	LockOnFindTarget_Radius = 1500.f;
 	LockOnFindTarget_WithinLookDirAngleDelta = 44.5f;
 	LockOnInterpViewToTargetSpeed = 5.f;
-	LockedOnInterpSocketOffsetSpeed_In = 2.5f;
-	LockedOnInterpSocketOffsetSpeed_Out = 4.f;
+	LockedOnInterpCameraSocketOffsetSpeed_IN = 2.5f;
+	LockedOnInterpCameraSocketOffsetSpeed_OUT = 4.f;
 	AllowSwitchLockOnTargetInterval = .5f;
+
+	CameraArmLength_MAX = 500.f;
+	CameraArmLengthInterpSpeeds.Set(5.f, 2.f);
 
 	MeshInterpSpeed_Location = 8.f;
 	MeshInterpSpeed_Rotation = 5.f;
@@ -212,6 +216,8 @@ void AAshForestCharacter::BeginPlay()
 	MyInitialMovementVars.InitialMaxWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
 	MyInitialMovementVars.InitialFallingLateralFriction = GetCharacterMovement()->FallingLateralFriction;
 	MyInitialMovementVars.InitialAirControl = GetCharacterMovement()->AirControl;
+
+	CameraArmLength_Default = CameraBoom->TargetArmLength;
 
 	ResetMeshTransform();
 }
@@ -1183,9 +1189,16 @@ void AAshForestCharacter::Tick_LockedOn(float DeltaTime)
 void AAshForestCharacter::Tick_UpdateCamera(float DeltaTime)
 {
 	if (IsLockedOn())
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, 2.5f);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_IN);
 	else
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, FVector(0.f, 0.f, 60.f), DeltaTime, 4.f);
+	{
+		const float velRatio = FMath::Clamp(GetVelocity().Size() / GetCharacterMovement()->MaxWalkSpeed, 0.f, 1.f);
+		const FVector newSocketOffset = FMath::Lerp(DefaultCameraSocketOffset, CameraSocketVelocityOffset_MAX, velRatio);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, newSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_OUT);
+
+		const float newLength = FMath::Lerp(CameraArmLength_Default, CameraArmLength_MAX, velRatio);
+		CameraBoom->TargetArmLength = (FMath::FInterpTo(CameraBoom->TargetArmLength, newLength, DeltaTime, (newLength >= CameraBoom->TargetArmLength) ? CameraArmLengthInterpSpeeds.X : CameraArmLengthInterpSpeeds.Y));
+	}
 }
 
 void AAshForestCharacter::SoftSetActorLocation(const FVector & NewLocation, const bool & bSweep /*= false*/)
