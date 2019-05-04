@@ -38,7 +38,7 @@ AAshForestCharacter::AAshForestCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f); // ...at this rotation rate
 	GetCharacterMovement()->JumpZVelocity = 600.f;
-	GetCharacterMovement()->AirControl = 0.2f;
+	GetCharacterMovement()->AirControl = 0.5f;
 
 	DefaultCameraSocketOffset.Set(0.f, 0.f, 90.f);
 	CameraSocketVelocityOffset_MAX.Set(0.f, 0.f, 110.f);
@@ -73,6 +73,11 @@ AAshForestCharacter::AAshForestCharacter()
 	ClimbingSpeed_DecayRate = 800.f;
 	ClimbingDuration_MAX = 1.f;
 	ClimbingJumpImpulseAxisSizes.Set(1000.f, 2000.f);
+
+	WallRunSpeed_Start = 7000.f;
+	WallRunSpeed_DecayRate = 500.f;
+	WallRunDuration_MAX = 1.5f;
+	WallRunJumpVelocityZ = 2000.f;
 
 	GrabLedgeCheckInterval = .05;
 
@@ -195,8 +200,6 @@ void AAshForestCharacter::OnMouseWheelScroll(float Rate)
 {
 	if (Rate != 0.f && IsLockedOn())
 	{
-		//if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, .5f, FColor::Green, FString::Printf(TEXT("Mouse Wheel: %3.2f"), Rate));
-
 		if (Rate > 0.f)
 			SwitchLockOnTarget_Right();
 		else
@@ -214,7 +217,7 @@ void AAshForestCharacter::BeginPlay()
 	MyInitialMovementVars.InitialGravityScale = GetCharacterMovement()->GravityScale;
 	MyInitialMovementVars.InitialGroundFriction = GetCharacterMovement()->GroundFriction;
 	MyInitialMovementVars.InitialMaxWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
-	MyInitialMovementVars.InitialFallingLateralFriction = GetCharacterMovement()->FallingLateralFriction;
+	MyInitialMovementVars.InitialFallingLateralFriction = .05f;//GetCharacterMovement()->FallingLateralFriction;
 	MyInitialMovementVars.InitialAirControl = GetCharacterMovement()->AirControl;
 
 	CameraArmLength_Default = CameraBoom->TargetArmLength;
@@ -270,7 +273,7 @@ void AAshForestCharacter::Tick(float DeltaTime)
 		Tick_MeshInterp(DeltaTime);
 
 	//AS: Reload Dash Charges Over Time
-	if (DashCharges_Current < DashCharges_MAX && ((UCharacterMovementComponent*)GetMovementComponent())->IsWalking())
+	if (DashCharges_Current < DashCharges_MAX && AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE /*&& ((UCharacterMovementComponent*)GetMovementComponent())->IsWalking()*/)
 	{
 		DashChargeReloadDurationCurrent -= DeltaTime;
 
@@ -284,8 +287,11 @@ void AAshForestCharacter::Tick(float DeltaTime)
 	}
 
 	//AS: Restore Air Control after wall jumping
-	if (GetCharacterMovement()->AirControl == 0.f && GetWorld()->TimeSince(LastWallJumpTime) > DashCooldownTime_AfterWallJump)
+	if (GetCharacterMovement()->FallingLateralFriction == 0.f && GetWorld()->TimeSince(LastWallJumpTime) > DashCooldownTime_AfterWallJump)
+	{
 		GetCharacterMovement()->AirControl = MyInitialMovementVars.InitialAirControl;
+		GetCharacterMovement()->FallingLateralFriction = MyInitialMovementVars.InitialFallingLateralFriction;
+	}
 }
 
 void AAshForestCharacter::Jump()
@@ -303,7 +309,11 @@ void AAshForestCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, 
 	if (GetCharacterMovement()->IsWalking())
 	{
 		DashesWhileFalling_Current = 0;
+		GetCharacterMovement()->FallingLateralFriction = MyInitialMovementVars.InitialFallingLateralFriction;
+		GetCharacterMovement()->bUseSeparateBrakingFriction = true;
 	}
+	else
+		GetCharacterMovement()->bUseSeparateBrakingFriction = false;
 }
 
 void AAshForestCharacter::SetAshCustomMoveState(TEnumAsByte<EAshCustomMoveState::Type> NewMoveState)
@@ -395,6 +405,7 @@ void AAshForestCharacter::StartDash(FVector & DashDir)
 	GetCharacterMovement()->MaxWalkSpeed = DashSpeed;
 	GetCharacterMovement()->GroundFriction = 0.f;
 	GetCharacterMovement()->FallingLateralFriction = 0.f;
+	GetCharacterMovement()->bUseSeparateBrakingFriction = false;
 
 	DashDamagedActors.Empty();
 
@@ -619,6 +630,7 @@ bool AAshForestCharacter::CanClimbHitSurface(const bool & bIsForStart, const FHi
 	return true;
 }
 
+PRAGMA_DISABLE_OPTIMIZATION
 void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 {
 	SetAshCustomMoveState(EAshCustomMoveState::EAshMove_CLIMBING);
@@ -626,12 +638,29 @@ void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 	LastStartClimbingTime = GetWorld()->GetTimeSeconds();
 	CurrentClimbingNormal = ClimbingSurfaceHit.ImpactNormal;
 	CurrentDirToClimbingSurface = (ClimbingSurfaceHit.ImpactPoint - GetActorLocation()).GetSafeNormal();
-	ClimbingSpeed_Current = ClimbingSpeed_Start;
 	PrevClimbingLocation = FVector::ZeroVector;
+	bIsWallRunning = false;
+	bDidWallJump = false;
+
+	const FVector currPlayerVelDir = GetControlRotation().Vector();
+	const float angleBetween = FMath::Abs(FMath::Acos((-CurrentClimbingNormal | currPlayerVelDir)) * (180.f / PI));
+
+	if (angleBetween > 35.f)
+	{
+		CurrentClimbingDir = FVector::VectorPlaneProject(currPlayerVelDir, ClimbingSurfaceHit.ImpactNormal);
+		CurrentClimbingDir.Z = 0.f;
+		CurrentClimbingDir = CurrentClimbingDir.GetSafeNormal();
+
+		bIsWallRunning = true;
+	}
+	else
+		CurrentClimbingDir = FVector::VectorPlaneProject(FVector::UpVector, ClimbingSurfaceHit.ImpactNormal).GetSafeNormal();
+	
+	ClimbingSpeed_Current = bIsWallRunning ? WallRunSpeed_Start : ClimbingSpeed_Start;
 
 	((UCharacterMovementComponent*)GetMovementComponent())->SetMovementMode(MOVE_Falling);
 
-	auto newVel = FVector::VectorPlaneProject(FVector::UpVector, CurrentClimbingNormal).GetSafeNormal() * ClimbingSpeed_Current;
+	auto newVel = CurrentClimbingDir * ClimbingSpeed_Current;
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 
 	DashesWhileFalling_Current = AllowedDashesWhileFalling;
@@ -639,7 +668,7 @@ void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 
 void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 {
-	if (GetWorld()->TimeSince(LastStartClimbingTime) > ClimbingDuration_MAX)
+	if (GetWorld()->TimeSince(LastStartClimbingTime) > (bIsWallRunning ? WallRunDuration_MAX : ClimbingDuration_MAX))
 	{
 		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END CLIMBING (REACHED MAX TIME)")));
 
@@ -656,15 +685,6 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 		return;
 	}
 
-	//AS: If the player basically hasn't moved since the last frame
-	if (PrevClimbingLocation != FVector::ZeroVector && (GetActorLocation() - PrevClimbingLocation).SizeSquared() <= FMath::Square(2.f))
-	{
-		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END CLIMBING (STUCK ON GEO)")));
-
-		EndClimbing();
-		return;
-	}
-
 	float capRadius;
 	float capHalfHeight;
 	GetCapsuleComponent()->GetScaledCapsuleSize(capRadius, capHalfHeight);
@@ -673,12 +693,25 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 	params.AddIgnoredActor(this);
 
 	FHitResult climbingHit;
-	auto bFoundSurface = GetWorld()->SweepSingleByChannel(climbingHit, GetActorLocation(), GetActorLocation() + (CurrentDirToClimbingSurface * 100.f), FQuat::Identity, ECC_Camera, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
+	auto bFoundSurface = GetWorld()->SweepSingleByChannel(climbingHit, GetActorLocation(), GetActorLocation() + (CurrentDirToClimbingSurface * (capRadius + 100.f)), FQuat::Identity, ECC_Camera, FCollisionShape::MakeCapsule(capRadius, capHalfHeight), params);
 	
 	if (bFoundSurface && !CanClimbHitSurface(false, climbingHit))
 		bFoundSurface = false;
 	
-	auto projectedClimbDir = FVector::VectorPlaneProject(FVector::UpVector, CurrentClimbingNormal).GetSafeNormal();
+	FVector projectedClimbDir = FVector::VectorPlaneProject(CurrentClimbingDir, CurrentClimbingNormal);
+
+	if (bIsWallRunning)
+		projectedClimbDir.Z = 0.f;
+
+	projectedClimbDir = projectedClimbDir.GetSafeNormal();
+
+	if (projectedClimbDir == FVector::ZeroVector)
+	{
+		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END CLIMBING (VELOCITY PROJECTION FAILED)")));
+
+		EndClimbing();
+		return;
+	}
 
 	if (bFoundSurface)
 	{
@@ -688,9 +721,18 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 		SoftSetActorLocation(FMath::VInterpTo(climbingHit.Location, GetActorLocation(), DeltaTime, 5.f), true);
 		SetActorRotation(FRotator(0.f, (CurrentDirToClimbingSurface).Rotation().Yaw, 0.f));
 	}
-	else
+	else //AS: If we have run out of wall to climb
 	{
 		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END CLIMBING (NO VALID SURFACE FOUND)")));
+
+		EndClimbing();
+		return;
+	}
+
+	//AS: If the player basically hasn't moved since the last frame
+	if (PrevClimbingLocation != FVector::ZeroVector && (GetActorLocation() - PrevClimbingLocation).SizeSquared() <= FMath::Square(2.f))
+	{
+		if (bDebugAshMovement && GEngine) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Orange, FString::Printf(TEXT("END CLIMBING (STUCK ON GEO)")));
 
 		EndClimbing();
 		return;
@@ -699,7 +741,7 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 	auto newVel = projectedClimbDir * ClimbingSpeed_Current;
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 
-	ClimbingSpeed_Current -= (DeltaTime * ClimbingSpeed_DecayRate);
+	ClimbingSpeed_Current -= (DeltaTime * (bIsWallRunning ? WallRunSpeed_DecayRate : ClimbingSpeed_DecayRate));
 
 	if (ClimbingSpeed_Current <= 0.f)
 	{
@@ -709,49 +751,81 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 		return;
 	}
 
+	CurrentClimbingDir = projectedClimbDir;
 	PrevClimbingLocation = GetActorLocation();
 }
 
 void AAshForestCharacter::EndClimbing(const bool bDoClimbOver /*= false*/, const FVector SurfaceTopLocation /*= FVector::ZeroVector*/)
 {
 	SetAshCustomMoveState(EAshCustomMoveState::EAshMove_NONE);
+	
+	ResetMeshTransform();
+
+	if (!bDidWallJump)
+	{
+		if (!bIsWallRunning)
+		{
+			if (!bDoClimbOver)
+			{
+				auto newVel = GetVelocity();
+				newVel.Z = FMath::Min(newVel.Z, 0.f);
+				((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
+			}
+			else
+				ClimbOverLedge(SurfaceTopLocation);
+		}
+		else
+		{
+			FVector endWallRunVel = CurrentClimbingDir * ClimbingSpeed_Current;
+			((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(endWallRunVel);
+		}
+	}
+
+	JumpCurrentCount = 0;
+	bWasJumping = false;
 
 	LastEndClimbingTime = GetWorld()->GetTimeSeconds();
 	CurrentClimbingNormal = FVector::ZeroVector;
 	CurrentDirToClimbingSurface = FVector::ZeroVector;
 	ClimbingSpeed_Current = 0.f;
-	
-	ResetMeshTransform();
-
-	if (!bDoClimbOver)
-	{
-		auto newVel = GetVelocity();
-		newVel.Z = FMath::Min(newVel.Z, 0.f);
-		((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
-	}
-	else
-		ClimbOverLedge(SurfaceTopLocation);
+	CurrentClimbingDir = FVector::ZeroVector;
+	bIsWallRunning = false;
+	bDidWallJump = false;
 }
 
 void AAshForestCharacter::DoWallJump()
 {
-	auto impulse = ((CurrentClimbingNormal + FVector::UpVector) * .5f).GetSafeNormal() * ClimbingJumpImpulseAxisSizes.X;
-	impulse.Z = ClimbingJumpImpulseAxisSizes.Y;
-	((UCharacterMovementComponent*)GetMovementComponent())->AddImpulse(impulse, true);
-
+	bDidWallJump = true;
 	LastWallJumpTime = GetWorld()->GetTimeSeconds();
-
-	DashCooldownTime_Current = DashCooldownTime_AfterWallJump;
+	DashCooldownTime_Current = bIsWallRunning ? .6f : DashCooldownTime_AfterWallJump;
 	LastDashEndTime = GetWorld()->GetTimeSeconds();
 	DashesWhileFalling_Current = 0;
 
-	GetCharacterMovement()->AirControl = 0.f;
+	if (!bIsWallRunning)
+	{
+		FVector wallJumpImpulse = CurrentClimbingNormal * ClimbingJumpImpulseAxisSizes.X;
+		wallJumpImpulse.Z = ClimbingJumpImpulseAxisSizes.Y;
+		((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(wallJumpImpulse);
+
+		GetCharacterMovement()->AirControl = 0.f;
+	}
+	else
+	{
+		FVector wallJumpVel = (((CurrentClimbingDir * 2.f) + CurrentClimbingNormal) / 2.f).GetSafeNormal() * ((UCharacterMovementComponent*)GetMovementComponent())->MaxWalkSpeed;
+		wallJumpVel.Z = WallRunJumpVelocityZ;
+		((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(wallJumpVel);
+
+		bIsWallRunning = false;	
+	}
 
 	EndClimbing();
 
+	GetCharacterMovement()->FallingLateralFriction = 0.f;
+	GetCharacterMovement()->bUseSeparateBrakingFriction = false;
+
 	OnWallJump();
 }
-
+PRAGMA_ENABLE_OPTIMIZATION
 void AAshForestCharacter::OnWallJump_Implementation()
 {
 	//AS: On wall jump event
@@ -782,7 +856,7 @@ bool AAshForestCharacter::CheckForLedge(FVector & FoundLedgeLocation)
 {
 	FoundLedgeLocation = FVector::ZeroVector;
 
-	if (GetWorld()->TimeSince(LastGrabLedgeCheckTime) < GrabLedgeCheckInterval)
+	if (bIsWallRunning || GetWorld()->TimeSince(LastGrabLedgeCheckTime) < GrabLedgeCheckInterval)
 		return false;
 
 	LastGrabLedgeCheckTime = GetWorld()->GetTimeSeconds();

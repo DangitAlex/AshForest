@@ -219,6 +219,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing")
 		FVector2D ClimbingJumpImpulseAxisSizes;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
+		float WallRunSpeed_Start;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
+		float WallRunSpeed_DecayRate;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
+		float WallRunDuration_MAX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
+		float WallRunJumpVelocityZ;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		FVector CurrentClimbingNormal;
 
@@ -238,7 +250,16 @@ protected:
 		float LastWallJumpTime;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		bool bDidWallJump;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		float ClimbingSpeed_Current;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		FVector CurrentClimbingDir;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		bool bIsWallRunning;
 
 	UFUNCTION(BlueprintCallable, Category = "Climbing")
 		bool CanClimbHitSurface(const bool & bIsForStart, const FHitResult & SurfaceHit) const;
@@ -458,6 +479,15 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable, Category = "Respawning")
 		void OnTouchCheckpoint(AActor* Checkpoint);
+
+//AS: =========================================================================
+//AS: Cash Moniez ==============================================================
+
+	UPROPERTY(BlueprintReadWrite, Transient, Category = "Rewards")
+		int32 CurrentSmolMoniez;
+
+	UPROPERTY(BlueprintReadWrite, Transient, Category = "Rewards")
+		int32 CurrentBigUnitMoniez;
 
 //AS: =========================================================================
 //AS: =========================================================================
