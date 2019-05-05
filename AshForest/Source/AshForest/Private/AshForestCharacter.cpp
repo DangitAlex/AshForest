@@ -78,6 +78,7 @@ AAshForestCharacter::AAshForestCharacter()
 	WallRunSpeed_DecayRate = 500.f;
 	WallRunDuration_MAX = 1.5f;
 	WallRunJumpVelocityZ = 2000.f;
+	WallRunPastLookDirAngleToSurface = 25.f;
 
 	GrabLedgeCheckInterval = .05;
 
@@ -96,6 +97,8 @@ AAshForestCharacter::AAshForestCharacter()
 
 	HealthRestoreRate = 2.f;
 	MaxHealth = 100.f;
+
+	LatestCheckpointIndex = -1;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -209,10 +212,7 @@ void AAshForestCharacter::OnMouseWheelScroll(float Rate)
 
 void AAshForestCharacter::BeginPlay() 
 {
-	Super::BeginPlay();
-
 	DashCharges_Current = DashCharges_MAX;
-	LatestCheckpointIndex = -1;
 
 	MyInitialMovementVars.InitialGravityScale = GetCharacterMovement()->GravityScale;
 	MyInitialMovementVars.InitialGroundFriction = GetCharacterMovement()->GroundFriction;
@@ -223,6 +223,8 @@ void AAshForestCharacter::BeginPlay()
 	CameraArmLength_Default = CameraBoom->TargetArmLength;
 
 	ResetMeshTransform();
+
+	Super::BeginPlay();
 }
 
 void AAshForestCharacter::Tick(float DeltaTime)
@@ -642,10 +644,11 @@ void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 	bIsWallRunning = false;
 	bDidWallJump = false;
 
-	const FVector currPlayerVelDir = GetControlRotation().Vector();
-	const float angleBetween = FMath::Abs(FMath::Acos((-CurrentClimbingNormal | currPlayerVelDir)) * (180.f / PI));
+	const FVector currPlayerVelDir = FRotator(0.f, GetControlRotation().Yaw, 0.f).Vector();
+	const FVector currSurfaceNormal = CurrentClimbingNormal.GetSafeNormal2D();
+	const float angleBetween = FMath::Abs(FMath::Acos((-currSurfaceNormal | currPlayerVelDir)) * (180.f / PI));
 
-	if (angleBetween > 35.f)
+	if (angleBetween >= WallRunPastLookDirAngleToSurface)
 	{
 		CurrentClimbingDir = FVector::VectorPlaneProject(currPlayerVelDir, ClimbingSurfaceHit.ImpactNormal);
 		CurrentClimbingDir.Z = 0.f;
@@ -1417,7 +1420,7 @@ void AAshForestCharacter::OnTouchCheckpoint(AActor* Checkpoint)
 	{
 		auto index = ((AAshForestCheckpoint*)Checkpoint)->GetCheckpointIndex();
 
-		if (index >= 0 && index > LatestCheckpointIndex)
+		if (index >= 0 && (LatestCheckpoint == nullptr || index > LatestCheckpointIndex))
 		{
 			LatestCheckpoint = Checkpoint;
 			LatestCheckpointIndex = index;

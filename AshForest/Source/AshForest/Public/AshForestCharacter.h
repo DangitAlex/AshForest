@@ -231,6 +231,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
 		float WallRunJumpVelocityZ;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wall Running")
+		float WallRunPastLookDirAngleToSurface;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		FVector CurrentClimbingNormal;
 
