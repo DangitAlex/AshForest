@@ -666,7 +666,7 @@ void AAshForestCharacter::StartClimbing(const FHitResult & ClimbingSurfaceHit)
 	auto newVel = CurrentClimbingDir * ClimbingSpeed_Current;
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 
-	DashesWhileFalling_Current = AllowedDashesWhileFalling;
+	//DashesWhileFalling_Current = AllowedDashesWhileFalling;
 }
 
 void AAshForestCharacter::Tick_Climbing(float DeltaTime)
