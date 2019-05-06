@@ -770,9 +770,9 @@ void AAshForestCharacter::EndClimbing(const bool bDoClimbOver /*= false*/, const
 		{
 			if (!bDoClimbOver)
 			{
-				auto newVel = GetVelocity();
-				newVel.Z = FMath::Min(newVel.Z, 0.f);
-				((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
+				//auto newVel = GetVelocity();
+				//newVel.Z = FMath::Min(newVel.Z, 0.f);
+				//((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
 			}
 			else
 				ClimbOverLedge(SurfaceTopLocation);
