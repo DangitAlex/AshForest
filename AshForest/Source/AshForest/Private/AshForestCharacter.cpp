@@ -1282,32 +1282,37 @@ void AAshForestCharacter::Tick_UpdateCamera(float DeltaTime)
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_IN);
 	else
 	{
-		if (bIsFocusing && CurrentFocusPointTrigger != nullptr)
+		if (bIsFocusing)
 		{
-			if (CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed > 0.f)
-				CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CurrentFocusPointTrigger->FocusTargetCameraArmLength, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed);
-
-			if (CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed > 0.f)
-				CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed);
-
-			if (MyCameraManager && CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed > 0.f)
-				MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), CurrentFocusPointTrigger->FocusTargetFOV, DeltaTime, CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed));
-
-			if (CurrentFocusPointTrigger->FocusPointActor != nullptr && CurrentFocusPointTrigger->ControlRotation_InterpSpeed > 0.f)
+			if (CurrentFocusPointTrigger != nullptr)
 			{
-				FRotator newControlRot = GetControlRotation();
-				FRotator RotToTarget = (CurrentFocusPointTrigger->FocusPointActor->GetActorLocation() - GetPawnViewLocation()).GetSafeNormal().Rotation();
-				RotToTarget.Roll = 0.f;
+				if (CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed > 0.f)
+					CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CurrentFocusPointTrigger->FocusTargetCameraArmLength, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed);
 
-				auto rotDelta = (RotToTarget - newControlRot);
+				if (CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed > 0.f)
+					CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed);
 
-				if (FMath::Abs(rotDelta.Pitch) > .1f || FMath::Abs(rotDelta.Yaw) > .1f)
-					newControlRot = FMath::RInterpTo(GetControlRotation(), RotToTarget, DeltaTime, CurrentFocusPointTrigger->ControlRotation_InterpSpeed);
-				else
-					newControlRot = RotToTarget;
+				if (MyCameraManager && CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed > 0.f)
+					MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), CurrentFocusPointTrigger->FocusTargetFOV, DeltaTime, CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed));
 
-				GetController()->SetControlRotation(newControlRot);
+				if (CurrentFocusPointTrigger->FocusPointActor != nullptr && CurrentFocusPointTrigger->ControlRotation_InterpSpeed > 0.f)
+				{
+					FRotator newControlRot = GetControlRotation();
+					FRotator RotToTarget = (CurrentFocusPointTrigger->FocusPointActor->GetActorLocation() - GetPawnViewLocation()).GetSafeNormal().Rotation();
+					RotToTarget.Roll = 0.f;
+
+					auto rotDelta = (RotToTarget - newControlRot);
+
+					if (FMath::Abs(rotDelta.Pitch) > .1f || FMath::Abs(rotDelta.Yaw) > .1f)
+						newControlRot = FMath::RInterpTo(GetControlRotation(), RotToTarget, DeltaTime, CurrentFocusPointTrigger->ControlRotation_InterpSpeed);
+					else
+						newControlRot = RotToTarget;
+
+					GetController()->SetControlRotation(newControlRot);
+				}
 			}
+			else
+				bIsFocusing = false;
 		}
 		else
 		{
@@ -1514,22 +1519,37 @@ void AAshForestCharacter::OnRespawned_Implementation()
 
 void AAshForestCharacter::StartFocusing()
 {
-	bIsFocusing = true;
+	if (CurrentFocusPointTrigger)
+	{
+		bIsFocusing = true;
+		OnFocusStateChanged();
+	}
 }
 
 void AAshForestCharacter::StopFocusing()
 {
-	bIsFocusing = false;
+	if (bIsFocusing)
+	{
+		bIsFocusing = false;
+		OnFocusStateChanged();
+	}
 }
 
 void AAshForestCharacter::SetFocusPointTrigger(AFocusPointTrigger* NewTrigger)
 {
-	CurrentFocusPointTrigger = NewTrigger;
-
-	OnFocusPointTriggerUpdated();
+	if (NewTrigger != CurrentFocusPointTrigger)
+	{
+		CurrentFocusPointTrigger = NewTrigger;
+		OnFocusPointTriggerUpdated();
+	}
 }
 
 void AAshForestCharacter::OnFocusPointTriggerUpdated_Implementation()
+{
+	//AS: DO SHIT IN BP
+}
+
+void AAshForestCharacter::OnFocusStateChanged_Implementation()
 {
 	//AS: DO SHIT IN BP
 }

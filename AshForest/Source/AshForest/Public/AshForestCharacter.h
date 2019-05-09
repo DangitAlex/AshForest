@@ -443,10 +443,13 @@ protected:
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
-		void SetFocusPointTrigger(AFocusPointTrigger* NewTrigger);
+	void SetFocusPointTrigger(AFocusPointTrigger* NewTrigger);
 	
 	UFUNCTION(BlueprintNativeEvent, Category = "Ash Camera")
-		void OnFocusPointTriggerUpdated();
+	void OnFocusPointTriggerUpdated();
+
+	UFUNCTION(BlueprintNativeEvent, Category = "Ash Camera")
+	void OnFocusStateChanged();
 
 protected:
 
