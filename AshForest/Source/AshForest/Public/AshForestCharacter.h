@@ -292,6 +292,9 @@ protected:
 		float GrabLedgeCheckInterval;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
+		bool bLastGrabLedgeSideLeft;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Climbing")
 		float LastGrabLedgeCheckTime;
 	
 	UFUNCTION(BlueprintCallable, Category = "Ledge Grab")
@@ -430,6 +433,9 @@ protected:
 		bool bIsFocusing;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		bool bWantsToFocus;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
 		AFocusPointTrigger* CurrentFocusPointTrigger;
 
 	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
@@ -440,6 +446,9 @@ protected:
 
 	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
 		void StopFocusing();
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
+		void SetIsFocusing(bool NewFocusing);
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Ash Camera")

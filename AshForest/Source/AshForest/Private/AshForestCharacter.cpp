@@ -395,7 +395,7 @@ void AAshForestCharacter::TryDash()
 
 bool AAshForestCharacter::CanDash(const bool bIsForStart /*= false*/) const
 {
-	return bIsForStart ? ((GetWorld()->TimeSince(LastDashEndTime) > DashCooldownTime_Current) && AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE && DashCharges_Current > 0 && (GetCharacterMovement()->IsWalking() || DashesWhileFalling_Current < AllowedDashesWhileFalling)) : IsDashing();
+	return bIsForStart ? (!bIsFocusing && (GetWorld()->TimeSince(LastDashEndTime) > DashCooldownTime_Current) && AshMoveState_Current == EAshCustomMoveState::EAshMove_NONE && DashCharges_Current > 0 && (GetCharacterMovement()->IsWalking() || DashesWhileFalling_Current < AllowedDashesWhileFalling)) : IsDashing();
 }
 
 void AAshForestCharacter::OnDash_Implementation()
@@ -619,8 +619,8 @@ void AAshForestCharacter::EndDash()
 	}
 
 	//AS: Make sure that we can't go extra distance due to large tick delta times
-	if ((GetActorLocation() - OriginalDashStartLocation).Size2D() > DashDistance_MAX)
-		SetActorLocation(OriginalDashStartLocation + ((GetActorLocation() - OriginalDashStartLocation).GetSafeNormal2D() * DashDistance_MAX));
+	if ((GetActorLocation() - OriginalDashStartLocation).Size() > DashDistance_MAX)
+		SetActorLocation(OriginalDashStartLocation + ((GetActorLocation() - OriginalDashStartLocation).GetSafeNormal() * DashDistance_MAX));
 
 	auto newVel = GetVelocity().GetSafeNormal2D() * (GetCharacterMovement()->MaxWalkSpeed * 2.f);
 	((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(newVel);
@@ -741,7 +741,7 @@ void AAshForestCharacter::Tick_Climbing(float DeltaTime)
 		CurrentDirToClimbingSurface = (climbingHit.ImpactPoint - GetActorLocation()).GetSafeNormal();
 
 		SoftSetActorLocation(FMath::VInterpTo(climbingHit.Location, GetActorLocation(), DeltaTime, 5.f), true);
-		SetActorRotation(FRotator(0.f, (CurrentDirToClimbingSurface).Rotation().Yaw, 0.f));
+		SetActorRotation(FRotator(0.f, (bIsWallRunning ? GetVelocity().GetSafeNormal() : CurrentDirToClimbingSurface).Rotation().Yaw, 0.f));
 	}
 	else //AS: If we have run out of wall to climb
 	{
@@ -884,77 +884,71 @@ bool AAshForestCharacter::CheckForLedge(FVector & FoundLedgeLocation)
 	auto traceOrigin = GetActorLocation() + (FVector::UpVector * (capHalfHeight + 50.f));
 	auto traceOrigin_Forward = traceOrigin + (GetActorForwardVector() * (capRadius + 20.f));
 
-	auto traceStart_Left_Origin = traceOrigin + (-GetActorRightVector() * capRadius);
-	auto traceStart_Right_Origin = traceOrigin + (GetActorRightVector() * capRadius);
-	auto traceStart_Left = traceOrigin_Forward + (-GetActorRightVector() * capRadius);
-	auto traceStart_Right = traceOrigin_Forward + (GetActorRightVector() * capRadius);
-	auto traceEnd_Left = traceStart_Left + (-FVector::UpVector * (capHalfHeight + 50.f));
-	auto traceEnd_Right = traceStart_Right + (-FVector::UpVector * (capHalfHeight + 50.f));
+	auto traceStart_First_Origin = traceOrigin + ((bLastGrabLedgeSideLeft ? GetActorRightVector() : -GetActorRightVector()) * capRadius);
+	auto traceStart_Second_Origin = traceOrigin + ((bLastGrabLedgeSideLeft ? -GetActorRightVector() : GetActorRightVector()) * capRadius);
+	auto traceStart_First = traceOrigin_Forward + ((bLastGrabLedgeSideLeft ? GetActorRightVector() : -GetActorRightVector()) * capRadius);
+	auto traceStart_Second = traceOrigin_Forward + ((bLastGrabLedgeSideLeft ? -GetActorRightVector() : GetActorRightVector()) * capRadius);
+	auto traceEnd_First = traceStart_First + (-FVector::UpVector * (capHalfHeight + 50.f));
+	auto traceEnd_Second = traceStart_Second + (-FVector::UpVector * (capHalfHeight + 50.f));
+
+	bLastGrabLedgeSideLeft = !bLastGrabLedgeSideLeft;
 
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
 
-	//AS: Do left ledge trace =========================================================================================================
-	FHitResult ledgeHit_Left;
-	auto bFoundLedge_Left = GetWorld()->LineTraceSingleByChannel(ledgeHit_Left, traceStart_Left_Origin, traceStart_Left, ECC_Camera, params);
-
-	if (bDebugAshMovement)
-		DrawDebugLine(GetWorld(), traceStart_Left_Origin, traceStart_Left, !bFoundLedge_Left ? FColor::Green : FColor::Yellow, false, 5.f, 0, 5.f);
-
-	if (bFoundLedge_Left)
+	//AS: Ledge Trace Lambda
+	auto DoLedgeTrace = [&](FHitResult & FillHitResult, bool & bFoundLedge, const FVector TraceOrigin, FVector TraceStart, FVector TraceEnd)
 	{
+		bFoundLedge = GetWorld()->LineTraceSingleByChannel(FillHitResult, TraceOrigin, TraceStart, ECC_Camera, params);
+
 		if (bDebugAshMovement)
-			DrawDebugSphere(GetWorld(), ledgeHit_Left.ImpactPoint, 20.f, 16, FColor::Orange, false, 5.f, 0, 3.f);
+			DrawDebugLine(GetWorld(), TraceOrigin, TraceStart, !bFoundLedge ? FColor::Green : FColor::Yellow, false, 5.f, 0, 5.f);
 
-		traceStart_Left = ledgeHit_Left.ImpactPoint + ledgeHit_Left.ImpactNormal * .1f;
-	}
+		if (bFoundLedge)
+		{
+			if (bDebugAshMovement)
+				DrawDebugSphere(GetWorld(), FillHitResult.ImpactPoint, 20.f, 16, FColor::Orange, false, 5.f, 0, 3.f);
 
-	bFoundLedge_Left = GetWorld()->LineTraceSingleByChannel(ledgeHit_Left, traceStart_Left, traceEnd_Left, ECC_Camera, params);
-	
-	if (bDebugAshMovement)
-		DrawDebugLine(GetWorld(), traceStart_Left, traceEnd_Left, bFoundLedge_Left ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
+			TraceStart = FillHitResult.ImpactPoint + FillHitResult.ImpactNormal * .1f;
+		}
 
-	if (bFoundLedge_Left && !IsValidLedgeHit(ledgeHit_Left))
-		bFoundLedge_Left = false;
+		bFoundLedge = GetWorld()->LineTraceSingleByChannel(FillHitResult, TraceStart, TraceEnd, ECC_Camera, params);
 
-	if (bDebugAshMovement)
-		DrawDebugLine(GetWorld(), traceStart_Left, traceEnd_Left, bFoundLedge_Left ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
-
-	if (bFoundLedge_Left)
-	{
 		if (bDebugAshMovement)
-			DrawDebugSphere(GetWorld(), ledgeHit_Left.ImpactPoint, 20.f, 16, FColor::Cyan, false, 5.f, 0, 3.f);
-	}
-	else
+			DrawDebugLine(GetWorld(), TraceStart, TraceEnd, bFoundLedge ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
+
+		if (bFoundLedge && !IsValidLedgeHit(FillHitResult))
+			bFoundLedge = false;
+
+		if (bDebugAshMovement)
+			DrawDebugLine(GetWorld(), TraceStart, TraceEnd, bFoundLedge ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
+
+		if (bFoundLedge)
+		{
+			if (bDebugAshMovement)
+				DrawDebugSphere(GetWorld(), FillHitResult.ImpactPoint, 20.f, 16, FColor::Cyan, false, 5.f, 0, 3.f);
+		}
+	};
+
+	//AS: Use the above lambda to do both ledge traces (assuming the first one succeeds)
+	bool bFoundLedge = false;
+	FHitResult ledgeHit_First;
+
+	DoLedgeTrace(ledgeHit_First, bFoundLedge, traceStart_First_Origin, traceStart_First, traceEnd_First);
+
+	if (!bFoundLedge)
 		return false;
 
-	//AS: Do right ledge trace =========================================================================================================
-	FHitResult ledgeHit_Right;
-	auto bFoundLedge_Right = GetWorld()->LineTraceSingleByChannel(ledgeHit_Right, traceStart_Right_Origin, traceStart_Right, ECC_Camera, params);
+	bFoundLedge = false;
+	FHitResult ledgeHit_Second;
 
-	bFoundLedge_Right = GetWorld()->LineTraceSingleByChannel(ledgeHit_Right, traceStart_Right, traceEnd_Right, ECC_Camera, params);
+	DoLedgeTrace(ledgeHit_Second, bFoundLedge, traceStart_Second_Origin, traceStart_Second, traceEnd_Second);
 
-	if (bFoundLedge_Right)
-	{
-		if (bDebugAshMovement)
-			DrawDebugSphere(GetWorld(), ledgeHit_Right.ImpactPoint, 20.f, 16, FColor::Orange, false, 5.f, 0, 3.f);
-
-		traceStart_Right = ledgeHit_Right.ImpactPoint + ledgeHit_Right.ImpactNormal * .1f;
-	}
-
-	if (bDebugAshMovement)
-		DrawDebugLine(GetWorld(), traceStart_Right, traceEnd_Right, bFoundLedge_Right ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
-
-	if (bFoundLedge_Right)
-	{
-		if (bDebugAshMovement)
-			DrawDebugSphere(GetWorld(), ledgeHit_Right.ImpactPoint, 20.f, 16, FColor::Cyan, false, 5.f, 0, 3.f);
-	}
-	else
+	if (!bFoundLedge)
 		return false;
 
 	//AS: Do center ledge trace to the average found ledge points ======================================================================
-	auto avgLedgeLoc = (ledgeHit_Left.ImpactPoint + ledgeHit_Right.ImpactPoint) * .5f;
+	auto avgLedgeLoc = (ledgeHit_First.ImpactPoint + ledgeHit_Second.ImpactPoint) * .5f;
 	auto traceStart_center = avgLedgeLoc + FVector(0.f, 0.f, 100.f);
 	auto traceEnd_center = traceStart_center + (-FVector::UpVector * 200.f);
 
@@ -965,7 +959,7 @@ bool AAshForestCharacter::CheckForLedge(FVector & FoundLedgeLocation)
 		bFoundLedge_Center = false;
 
 	if (bDebugAshMovement)
-		DrawDebugLine(GetWorld(), traceStart_Right, traceEnd_Right, bFoundLedge_Center ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
+		DrawDebugLine(GetWorld(), traceStart_Second, traceEnd_Second, bFoundLedge_Center ? FColor::Green : FColor::Red, false, 5.f, 0, 5.f);
 
 	if (bFoundLedge_Center)
 	{
@@ -1282,37 +1276,41 @@ void AAshForestCharacter::Tick_UpdateCamera(float DeltaTime)
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_IN);
 	else
 	{
-		if (bIsFocusing)
+		if (!bIsFocusing && bWantsToFocus && CurrentFocusPointTrigger != nullptr)
+			SetIsFocusing(true);
+
+		if (bIsFocusing && CurrentFocusPointTrigger != nullptr)
 		{
-			if (CurrentFocusPointTrigger != nullptr)
-			{
-				if (CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed > 0.f)
-					CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CurrentFocusPointTrigger->FocusTargetCameraArmLength, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed);
-
-				if (CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed > 0.f)
-					CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed);
-
-				if (MyCameraManager && CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed > 0.f)
-					MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), CurrentFocusPointTrigger->FocusTargetFOV, DeltaTime, CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed));
-
-				if (CurrentFocusPointTrigger->FocusPointActor != nullptr && CurrentFocusPointTrigger->ControlRotation_InterpSpeed > 0.f)
-				{
-					FRotator newControlRot = GetControlRotation();
-					FRotator RotToTarget = (CurrentFocusPointTrigger->FocusPointActor->GetActorLocation() - GetPawnViewLocation()).GetSafeNormal().Rotation();
-					RotToTarget.Roll = 0.f;
-
-					auto rotDelta = (RotToTarget - newControlRot);
-
-					if (FMath::Abs(rotDelta.Pitch) > .1f || FMath::Abs(rotDelta.Yaw) > .1f)
-						newControlRot = FMath::RInterpTo(GetControlRotation(), RotToTarget, DeltaTime, CurrentFocusPointTrigger->ControlRotation_InterpSpeed);
-					else
-						newControlRot = RotToTarget;
-
-					GetController()->SetControlRotation(newControlRot);
-				}
-			}
+			if (CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed > 0.f)
+				CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CurrentFocusPointTrigger->FocusTargetCameraArmLength, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed);
 			else
-				bIsFocusing = false;
+				CameraBoom->TargetArmLength = (FMath::FInterpTo(CameraBoom->TargetArmLength, CameraArmLength_Default, DeltaTime, (CameraArmLength_Default >= CameraBoom->TargetArmLength) ? CameraArmLengthInterpSpeeds.X : CameraArmLengthInterpSpeeds.Y));
+
+			if (CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed > 0.f)
+				CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed);
+			else
+				CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, DefaultCameraSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_OUT);
+
+			if (MyCameraManager && CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed > 0.f)
+				MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), CurrentFocusPointTrigger->FocusTargetFOV, DeltaTime, CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed));
+			else
+				MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), MyCameraManager->DefaultFOV, DeltaTime, WarpFOV_InterpSpeed));
+
+			if (CurrentFocusPointTrigger->FocusPointActor != nullptr && CurrentFocusPointTrigger->ControlRotation_InterpSpeed > 0.f)
+			{
+				FRotator newControlRot = GetControlRotation();
+				FRotator RotToTarget = (CurrentFocusPointTrigger->FocusPointActor->GetActorLocation() - GetPawnViewLocation()).GetSafeNormal().Rotation();
+				RotToTarget.Roll = 0.f;
+
+				auto rotDelta = (RotToTarget - newControlRot);
+
+				if (FMath::Abs(rotDelta.Pitch) > .1f || FMath::Abs(rotDelta.Yaw) > .1f)
+					newControlRot = FMath::RInterpTo(GetControlRotation(), RotToTarget, DeltaTime, CurrentFocusPointTrigger->ControlRotation_InterpSpeed);
+				else
+					newControlRot = RotToTarget;
+
+				GetController()->SetControlRotation(newControlRot);
+			}
 		}
 		else
 		{
@@ -1508,6 +1506,9 @@ void AAshForestCharacter::Respawn()
 		GetController()->SetControlRotation(newTrans.GetRotation().Rotator());
 		SetLockOnTarget(NULL);
 
+		FVector zeroVel = FVector::ZeroVector;
+		((UCharacterMovementComponent*)GetMovementComponent())->OverrideVelocity(zeroVel);
+
 		OnRespawned();
 	}
 }
@@ -1519,18 +1520,24 @@ void AAshForestCharacter::OnRespawned_Implementation()
 
 void AAshForestCharacter::StartFocusing()
 {
+	bWantsToFocus = true;
+
 	if (CurrentFocusPointTrigger)
-	{
-		bIsFocusing = true;
-		OnFocusStateChanged();
-	}
+		SetIsFocusing(true);
 }
 
 void AAshForestCharacter::StopFocusing()
 {
-	if (bIsFocusing)
+	bWantsToFocus = false;
+
+	SetIsFocusing(false);
+}
+
+void AAshForestCharacter::SetIsFocusing(bool NewFocusing)
+{
+	if (bIsFocusing != NewFocusing)
 	{
-		bIsFocusing = false;
+		bIsFocusing = NewFocusing;
 		OnFocusStateChanged();
 	}
 }
@@ -1540,6 +1547,10 @@ void AAshForestCharacter::SetFocusPointTrigger(AFocusPointTrigger* NewTrigger)
 	if (NewTrigger != CurrentFocusPointTrigger)
 	{
 		CurrentFocusPointTrigger = NewTrigger;
+
+		if (CurrentFocusPointTrigger == nullptr)
+			SetIsFocusing(false);
+
 		OnFocusPointTriggerUpdated();
 	}
 }
