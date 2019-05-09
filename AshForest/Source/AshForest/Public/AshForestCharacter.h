@@ -31,6 +31,8 @@ struct FInitialCharMovementVars
 	float InitialAirControl;
 };
 
+class AFocusPointTrigger;
+
 UCLASS(config=Game)
 class AAshForestCharacter : public ADamageableCharacter
 {
@@ -45,6 +47,7 @@ class AAshForestCharacter : public ADamageableCharacter
 	class UCameraComponent* FollowCamera;
 
 	FInitialCharMovementVars MyInitialMovementVars;
+
 public:
 	AAshForestCharacter();
 
@@ -408,11 +411,44 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
 		FVector2D CameraArmLengthInterpSpeeds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		float WarpFOV_MAX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ash Camera")
+		float WarpFOV_InterpSpeed;
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
 		float CameraArmLength_Default;
 
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		APlayerCameraManager* MyCameraManager;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		float StartFOV;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		bool bIsFocusing;
+
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "Ash Camera")
+		AFocusPointTrigger* CurrentFocusPointTrigger;
+
 	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
 		void Tick_UpdateCamera(float DeltaTime);
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
+		void StartFocusing();
+
+	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
+		void StopFocusing();
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Ash Camera")
+		void SetFocusPointTrigger(AFocusPointTrigger* NewTrigger);
+	
+	UFUNCTION(BlueprintNativeEvent, Category = "Ash Camera")
+		void OnFocusPointTriggerUpdated();
+
+protected:
 
 //AS: =========================================================================
 //AS: Mesh Interpolation ======================================================
@@ -507,6 +543,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 		void OnKilledEnemy(AActor* KilledEnemy);
 
-
+	
 };
 

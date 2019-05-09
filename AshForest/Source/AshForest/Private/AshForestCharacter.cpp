@@ -12,6 +12,7 @@
 #include "Engine.h"
 #include "AshForestCheckpoint.h"
 #include "AshForestProjectile.h"
+#include "FocusPointTrigger.h"
 
 //////////////////////////////////////////////////////////////////////////
 // AAshForestCharacter
@@ -92,6 +93,9 @@ AAshForestCharacter::AAshForestCharacter()
 	CameraArmLength_MAX = 500.f;
 	CameraArmLengthInterpSpeeds.Set(5.f, 2.f);
 
+	WarpFOV_MAX = 110.f;
+	WarpFOV_InterpSpeed = 4.f;
+
 	MeshInterpSpeed_Location = 8.f;
 	MeshInterpSpeed_Rotation = 5.f;
 
@@ -118,6 +122,8 @@ void AAshForestCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 	PlayerInputComponent->BindAction("LockOn", IE_Released, this, &AAshForestCharacter::OnLockOnReleased);
 	PlayerInputComponent->BindAction("SwitchTarget_Left", IE_Pressed, this, &AAshForestCharacter::SwitchLockOnTarget_Left);
 	PlayerInputComponent->BindAction("SwitchTarget_Right", IE_Pressed, this, &AAshForestCharacter::SwitchLockOnTarget_Right);
+	PlayerInputComponent->BindAction("Focus", IE_Pressed, this, &AAshForestCharacter::StartFocusing);
+	PlayerInputComponent->BindAction("Focus", IE_Released, this, &AAshForestCharacter::StopFocusing);
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &AAshForestCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AAshForestCharacter::MoveRight);
@@ -137,28 +143,31 @@ void AAshForestCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 void AAshForestCharacter::TurnAtRate(float Rate)
 {
 	// calculate delta for this frame from the rate information
-	if (!IsLockedOn())
-		AddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());
-	else if (FMath::Abs(Rate) >= .75f && IsLockedOn())
-		TrySwitchLockOnTarget(Rate);
+	if (!bIsFocusing)
+	{
+		if (!IsLockedOn())
+			AddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());
+		else if (FMath::Abs(Rate) >= .75f && IsLockedOn())
+			TrySwitchLockOnTarget(Rate);
+	}
 }
 
 void AAshForestCharacter::LookUpAtRate(float Rate)
 {
 	// calculate delta for this frame from the rate information
-	if(!IsLockedOn())
+	if(!IsLockedOn() && !bIsFocusing)
 		AddControllerPitchInput(Rate * BaseLookUpRate * GetWorld()->GetDeltaSeconds());
 }
 
 void AAshForestCharacter::AddControllerPitchInput(float Val)
 {
-	if (!IsLockedOn())
+	if (!IsLockedOn() && !bIsFocusing)
 		Super::AddControllerPitchInput(Val);
 }
 
 void AAshForestCharacter::AddControllerYawInput(float Val)
 {
-	if (!IsLockedOn())
+	if (!IsLockedOn() && !bIsFocusing)
 		Super::AddControllerYawInput(Val);
 }
 
@@ -221,6 +230,16 @@ void AAshForestCharacter::BeginPlay()
 	MyInitialMovementVars.InitialAirControl = GetCharacterMovement()->AirControl;
 
 	CameraArmLength_Default = CameraBoom->TargetArmLength;
+
+	if (GetController())
+	{
+		MyCameraManager = ((APlayerController*)GetController())->PlayerCameraManager;
+
+		check(MyCameraManager);
+
+		MyCameraManager->UnlockFOV();
+		StartFOV = MyCameraManager->DefaultFOV;
+	}
 
 	ResetMeshTransform();
 
@@ -1263,12 +1282,54 @@ void AAshForestCharacter::Tick_UpdateCamera(float DeltaTime)
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, LockedOnCameraSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_IN);
 	else
 	{
-		const float velRatio = FMath::Clamp(GetVelocity().Size() / GetCharacterMovement()->MaxWalkSpeed, 0.f, 1.f);
-		const FVector newSocketOffset = FMath::Lerp(DefaultCameraSocketOffset, CameraSocketVelocityOffset_MAX, velRatio);
-		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, newSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_OUT);
+		if (bIsFocusing && CurrentFocusPointTrigger != nullptr)
+		{
+			if (CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed > 0.f)
+				CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CurrentFocusPointTrigger->FocusTargetCameraArmLength, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraArmLength_InterpSpeed);
 
-		const float newLength = FMath::Lerp(CameraArmLength_Default, CameraArmLength_MAX, velRatio);
-		CameraBoom->TargetArmLength = (FMath::FInterpTo(CameraBoom->TargetArmLength, newLength, DeltaTime, (newLength >= CameraBoom->TargetArmLength) ? CameraArmLengthInterpSpeeds.X : CameraArmLengthInterpSpeeds.Y));
+			if (CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed > 0.f)
+				CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset, DeltaTime, CurrentFocusPointTrigger->FocusTargetCameraSocketOffset_InterpSpeed);
+
+			if (MyCameraManager && CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed > 0.f)
+				MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), CurrentFocusPointTrigger->FocusTargetFOV, DeltaTime, CurrentFocusPointTrigger->FocusTargetFOV_InterpSpeed));
+
+			if (CurrentFocusPointTrigger->FocusPointActor != nullptr && CurrentFocusPointTrigger->ControlRotation_InterpSpeed > 0.f)
+			{
+				FRotator newControlRot = GetControlRotation();
+				FRotator RotToTarget = (CurrentFocusPointTrigger->FocusPointActor->GetActorLocation() - GetPawnViewLocation()).GetSafeNormal().Rotation();
+				RotToTarget.Roll = 0.f;
+
+				auto rotDelta = (RotToTarget - newControlRot);
+
+				if (FMath::Abs(rotDelta.Pitch) > .1f || FMath::Abs(rotDelta.Yaw) > .1f)
+					newControlRot = FMath::RInterpTo(GetControlRotation(), RotToTarget, DeltaTime, CurrentFocusPointTrigger->ControlRotation_InterpSpeed);
+				else
+					newControlRot = RotToTarget;
+
+				GetController()->SetControlRotation(newControlRot);
+			}
+		}
+		else
+		{
+			const float velRatio = FMath::Clamp(GetVelocity().Size() / GetCharacterMovement()->MaxWalkSpeed, 0.f, 1.f);
+			const FVector newSocketOffset = FMath::Lerp(DefaultCameraSocketOffset, CameraSocketVelocityOffset_MAX, velRatio);
+			CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, newSocketOffset, DeltaTime, LockedOnInterpCameraSocketOffsetSpeed_OUT);
+
+			const float newLength = FMath::Lerp(CameraArmLength_Default, CameraArmLength_MAX, velRatio);
+			CameraBoom->TargetArmLength = (FMath::FInterpTo(CameraBoom->TargetArmLength, newLength, DeltaTime, (newLength >= CameraBoom->TargetArmLength) ? CameraArmLengthInterpSpeeds.X : CameraArmLengthInterpSpeeds.Y));
+
+			if (MyCameraManager)
+			{
+				//AS: Lerp the FOV wider as the player looks up to make the world seem larger/taller than it is
+				if (GetControlRotation().Pitch >= 45.f && GetControlRotation().Pitch <= 90.f)
+				{
+					const float targetFOV = FMath::Lerp(MyCameraManager->DefaultFOV, WarpFOV_MAX, FMath::Clamp(((GetControlRotation().Pitch - 45.f) / 45.f), 0.f, 1.f));
+					MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), targetFOV, DeltaTime, WarpFOV_InterpSpeed));
+				}
+				else
+					MyCameraManager->SetFOV(FMath::FInterpTo(MyCameraManager->GetFOVAngle(), MyCameraManager->DefaultFOV, DeltaTime, WarpFOV_InterpSpeed));
+			}
+		}
 	}
 }
 
@@ -1449,4 +1510,26 @@ void AAshForestCharacter::Respawn()
 void AAshForestCharacter::OnRespawned_Implementation()
 {
 
+}
+
+void AAshForestCharacter::StartFocusing()
+{
+	bIsFocusing = true;
+}
+
+void AAshForestCharacter::StopFocusing()
+{
+	bIsFocusing = false;
+}
+
+void AAshForestCharacter::SetFocusPointTrigger(AFocusPointTrigger* NewTrigger)
+{
+	CurrentFocusPointTrigger = NewTrigger;
+
+	OnFocusPointTriggerUpdated();
+}
+
+void AAshForestCharacter::OnFocusPointTriggerUpdated_Implementation()
+{
+	//AS: DO SHIT IN BP
 }
